@@ -1,0 +1,6 @@
+login as: lenovo
+lenovo@112.196.37.203's password:
+Admin@123
+
+lenovo@lenovo-Lenovo-Product:~$ sudo -s
+[sudo] password for lenovo:Admin@123
