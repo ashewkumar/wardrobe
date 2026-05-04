@@ -1,7 +1,12 @@
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+
+import '../services/analytics_service.dart';
 import '../services/api_service.dart';
+import '../services/notification_service.dart';
+import '../services/stability_service.dart';
 import '../ui/app_theme.dart';
+import 'analytics_page.dart';
 import 'auth_page.dart';
 
 class ProfileSettingsPage extends StatefulWidget {
@@ -14,11 +19,16 @@ class ProfileSettingsPage extends StatefulWidget {
 class _ProfileSettingsPageState extends State<ProfileSettingsPage> {
   Map<String, dynamic>? profile;
   bool loading = true;
+  bool notificationsEnabled = true;
+  int pendingReminders = 0;
+  int crashFreeSessions = 0;
 
   @override
   void initState() {
     super.initState();
+    AppAnalyticsService.instance.trackScreen('profile_settings_page');
     _loadProfile();
+    _loadOperationalSettings();
   }
 
   Future<void> _loadProfile() async {
@@ -39,6 +49,35 @@ class _ProfileSettingsPageState extends State<ProfileSettingsPage> {
     } else {
       setState(() => loading = false);
     }
+  }
+
+  Future<void> _loadOperationalSettings() async {
+    final notificationSnapshot = await AppNotificationService.instance
+        .getSnapshot();
+    final stabilitySnapshot = await AppStabilityService.instance.getSnapshot();
+    if (!mounted) return;
+    setState(() {
+      notificationsEnabled = notificationSnapshot.enabled;
+      pendingReminders = notificationSnapshot.pendingCount;
+      crashFreeSessions = stabilitySnapshot.crashFreeSessions;
+    });
+  }
+
+  Future<void> _updateNotifications(bool enabled) async {
+    await AppNotificationService.instance.setEnabled(enabled);
+    if (enabled) {
+      final granted = await AppNotificationService.instance
+          .requestPermissions();
+      if (!granted && mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Notification permission was not granted.'),
+          ),
+        );
+      }
+    }
+
+    await _loadOperationalSettings();
   }
 
   Future<void> _logout(BuildContext context) async {
@@ -73,7 +112,11 @@ class _ProfileSettingsPageState extends State<ProfileSettingsPage> {
                 CircleAvatar(
                   radius: 28,
                   backgroundColor: AppTheme.mint.withOpacity(0.7),
-                  child: const Icon(Icons.person, color: AppTheme.plum, size: 28),
+                  child: const Icon(
+                    Icons.person,
+                    color: AppTheme.plum,
+                    size: 28,
+                  ),
                 ),
                 const SizedBox(width: 12),
                 Column(
@@ -94,16 +137,29 @@ class _ProfileSettingsPageState extends State<ProfileSettingsPage> {
             ),
           ),
           const SizedBox(height: 20),
-          Text("Style Preferences",
-              style: Theme.of(context).textTheme.titleLarge),
-          const SizedBox(height: 12),
-          _PreferenceTile(
-            title: "Preferred colors",
-            value: "Ivory · Navy · Terracotta",
+          Text(
+            "Style Preferences",
+            style: Theme.of(context).textTheme.titleLarge,
           ),
-          _PreferenceTile(
+          const SizedBox(height: 12),
+          const _PreferenceTile(
+            title: "Preferred colors",
+            value: "Ivory Â· Navy Â· Terracotta",
+          ),
+          const _PreferenceTile(
             title: "Climate preference",
             value: "Warm weather layering",
+          ),
+          const SizedBox(height: 20),
+          Text("Operations", style: Theme.of(context).textTheme.titleLarge),
+          const SizedBox(height: 12),
+          _PreferenceTile(
+            title: "Pending reminders",
+            value: "$pendingReminders scheduled",
+          ),
+          _PreferenceTile(
+            title: "Crash-free baseline",
+            value: "$crashFreeSessions healthy sessions recorded",
           ),
           const SizedBox(height: 20),
           Text("Settings", style: Theme.of(context).textTheme.titleLarge),
@@ -111,17 +167,30 @@ class _ProfileSettingsPageState extends State<ProfileSettingsPage> {
           _SettingTile(
             title: "Notifications",
             subtitle: "Outfit reminders, travel prep, social alerts",
-            trailing: Switch(value: true, onChanged: (_) {}),
+            trailing: Switch(
+              value: notificationsEnabled,
+              onChanged: _updateNotifications,
+            ),
           ),
           _SettingTile(
+            title: "Admin analytics",
+            subtitle: "Usage, reminders, performance, stability",
+            trailing: IconButton(
+              icon: const Icon(Icons.chevron_right),
+              onPressed: () => Navigator.of(
+                context,
+              ).push(MaterialPageRoute(builder: (_) => const AnalyticsPage())),
+            ),
+          ),
+          const _SettingTile(
             title: "Privacy controls",
             subtitle: "Manage shared wardrobes and invites",
-            trailing: const Icon(Icons.chevron_right),
+            trailing: Icon(Icons.chevron_right),
           ),
-          _SettingTile(
+          const _SettingTile(
             title: "Delete account",
             subtitle: "GDPR / DPDP compliant request",
-            trailing: const Icon(Icons.delete_outline),
+            trailing: Icon(Icons.delete_outline),
           ),
           const SizedBox(height: 20),
           ElevatedButton(

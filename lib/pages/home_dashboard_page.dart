@@ -1,8 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import '../services/analytics_service.dart';
 import '../services/api_service.dart';
+import '../services/app_time_service.dart';
 import '../services/calendar_service.dart';
+import '../services/stability_service.dart';
 import '../services/weather_service.dart';
 import '../ui/app_theme.dart';
 import 'ai_suggestion_page.dart';
@@ -21,50 +24,54 @@ class _HomeDashboardPageState extends State<HomeDashboardPage> {
   String? token;
   String? userId;
 
-  String _greetingName = "Mira";
+  String _greetingName = 'Mira';
   _WeatherData _weather = const _WeatherData(
-    city: "Delhi",
+    city: 'Delhi',
     temperatureC: 31,
-    condition: "Sunny",
-    tip: "Light layers recommended",
+    condition: 'Sunny',
+    tip: 'Light layers recommended',
   );
   _OutfitData _todayOutfit = const _OutfitData(
     title: "Today's planned outfit",
-    description: "Plan your look for the day",
+    description: 'Plan your look for the day',
   );
   List<_StatItem> _quickStats = const [
-    _StatItem(label: "Total items", value: "0", icon: Icons.inventory_2),
-    _StatItem(label: "Upcoming events", value: "0", icon: Icons.event_available),
+    _StatItem(label: 'Total items', value: '0', icon: Icons.inventory_2),
+    _StatItem(
+      label: 'Upcoming events',
+      value: '0',
+      icon: Icons.event_available,
+    ),
   ];
 
   late final List<_ActionItem> _boosters = [
     _ActionItem(
-      title: "Outfit Builder",
-      subtitle: "Drag and layer",
+      title: 'Outfit Builder',
+      subtitle: 'Drag and layer',
       icon: Icons.layers,
-      onTap: () => Navigator.of(context).push(
-        MaterialPageRoute(builder: (_) => const OutfitBuilderPage()),
-      ),
+      onTap: () => Navigator.of(
+        context,
+      ).push(MaterialPageRoute(builder: (_) => const OutfitBuilderPage())),
     ),
     _ActionItem(
-      title: "Analytics",
-      subtitle: "Wear insights",
+      title: 'Analytics',
+      subtitle: 'Wear insights',
       icon: Icons.query_stats,
-      onTap: () => Navigator.of(context).push(
-        MaterialPageRoute(builder: (_) => const AnalyticsPage()),
-      ),
+      onTap: () => Navigator.of(
+        context,
+      ).push(MaterialPageRoute(builder: (_) => const AnalyticsPage())),
     ),
     _ActionItem(
-      title: "Travel Planner",
-      subtitle: "Packing list",
+      title: 'Travel Planner',
+      subtitle: 'Packing list',
       icon: Icons.card_travel,
-      onTap: () => Navigator.of(context).push(
-        MaterialPageRoute(builder: (_) => const TravelPage()),
-      ),
+      onTap: () => Navigator.of(
+        context,
+      ).push(MaterialPageRoute(builder: (_) => const TravelPage())),
     ),
     _ActionItem(
-      title: "Style Playbook",
-      subtitle: "Tips and inspo",
+      title: 'Style Playbook',
+      subtitle: 'Tips and inspo',
       icon: Icons.auto_awesome_mosaic,
       onTap: () {},
     ),
@@ -73,34 +80,38 @@ class _HomeDashboardPageState extends State<HomeDashboardPage> {
   @override
   void initState() {
     super.initState();
+    AppAnalyticsService.instance.trackScreen('home_dashboard_page');
     _loadHomeData();
   }
 
   Future<void> _loadHomeData() async {
     final prefs = await SharedPreferences.getInstance();
-    token = prefs.getString("token");
-    userId = prefs.getString("user_id");
+    token = prefs.getString('token');
+    userId = prefs.getString('user_id');
 
     if (token == null || userId == null) {
       return;
     }
 
-    await Future.wait([
-      _loadProfile(),
-      _loadStats(),
-      _loadWeather(),
-      _loadNextPlan(),
-    ]);
+    await AppStabilityService.instance.monitor(
+      'home_dashboard_load',
+      () => Future.wait([
+        _loadProfile(),
+        _loadStats(),
+        _loadWeather(),
+        _loadNextPlan(),
+      ]),
+    );
   }
 
   Future<void> _loadProfile() async {
     if (token == null) return;
     final res = await ApiService.getProfile(token!);
-    if (res != null && res["status"] == true) {
-      final data = res["data"];
-      if (data is Map && data["name"] != null) {
+    if (res != null && res['status'] == true) {
+      final data = res['data'];
+      if (data is Map && data['name'] != null) {
         setState(() {
-          _greetingName = data["name"].toString();
+          _greetingName = data['name'].toString();
         });
       }
     }
@@ -111,8 +122,8 @@ class _HomeDashboardPageState extends State<HomeDashboardPage> {
 
     int totalItems = 0;
     final imagesRes = await ApiService.getImages(token!, userId!);
-    if (imagesRes != null && imagesRes["status"] == true) {
-      final list = imagesRes["data"];
+    if (imagesRes != null && imagesRes['status'] == true) {
+      final list = imagesRes['data'];
       if (list is List) {
         totalItems = list.length;
       }
@@ -122,7 +133,7 @@ class _HomeDashboardPageState extends State<HomeDashboardPage> {
       token: token!,
       userId: userId!,
     );
-    final now = DateTime.now();
+    final now = AppTime.now();
     final upcoming = dates.where((d) {
       final date = DateTime(d.date.year, d.date.month, d.date.day);
       final today = DateTime(now.year, now.month, now.day);
@@ -132,12 +143,12 @@ class _HomeDashboardPageState extends State<HomeDashboardPage> {
     setState(() {
       _quickStats = [
         _StatItem(
-          label: "Total items",
+          label: 'Total items',
           value: totalItems.toString(),
           icon: Icons.inventory_2,
         ),
         _StatItem(
-          label: "Upcoming events",
+          label: 'Upcoming events',
           value: upcoming.toString(),
           icon: Icons.event_available,
         ),
@@ -146,7 +157,6 @@ class _HomeDashboardPageState extends State<HomeDashboardPage> {
   }
 
   Future<void> _loadWeather() async {
-    // Demo coordinates for Delhi
     const lat = 28.61;
     const lon = 77.20;
     final temp = await WeatherService().getTemperature(lat, lon);
@@ -156,7 +166,7 @@ class _HomeDashboardPageState extends State<HomeDashboardPage> {
 
     setState(() {
       _weather = _WeatherData(
-        city: "Delhi",
+        city: 'Delhi',
         temperatureC: tempRounded,
         condition: condition,
         tip: tip,
@@ -174,7 +184,7 @@ class _HomeDashboardPageState extends State<HomeDashboardPage> {
       setState(() {
         _todayOutfit = const _OutfitData(
           title: "Today's planned outfit",
-          description: "No upcoming plans yet",
+          description: 'No upcoming plans yet',
         );
       });
       return;
@@ -185,23 +195,23 @@ class _HomeDashboardPageState extends State<HomeDashboardPage> {
     setState(() {
       _todayOutfit = _OutfitData(
         title: "Today's planned outfit",
-        description: "Next: ${next.title} on ${next.dateLabel}",
+        description: 'Next: ${next.title} on ${next.dateLabel}',
       );
     });
   }
 
   String _conditionForTemp(int temp) {
-    if (temp >= 34) return "Hot";
-    if (temp >= 28) return "Warm";
-    if (temp >= 22) return "Mild";
-    return "Cool";
+    if (temp >= 34) return 'Hot';
+    if (temp >= 28) return 'Warm';
+    if (temp >= 22) return 'Mild';
+    return 'Cool';
   }
 
   String _tipForTemp(int temp) {
-    if (temp >= 34) return "Breathable fabrics recommended";
-    if (temp >= 28) return "Light layers recommended";
-    if (temp >= 22) return "Comfort layers recommended";
-    return "Add a light jacket";
+    if (temp >= 34) return 'Breathable fabrics recommended';
+    if (temp >= 28) return 'Light layers recommended';
+    if (temp >= 22) return 'Comfort layers recommended';
+    return 'Add a light jacket';
   }
 
   @override
@@ -220,12 +230,12 @@ class _HomeDashboardPageState extends State<HomeDashboardPage> {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Text(
-                        "Good morning, $_greetingName",
+                        'Good morning, $_greetingName',
                         style: Theme.of(context).textTheme.headlineMedium,
                       ),
                       const SizedBox(height: 6),
                       Text(
-                        "Style with confidence today",
+                        'Style with confidence today',
                         style: Theme.of(context).textTheme.bodyMedium,
                       ),
                     ],
@@ -233,15 +243,12 @@ class _HomeDashboardPageState extends State<HomeDashboardPage> {
                   CircleAvatar(
                     radius: 22,
                     backgroundColor: Colors.white,
-                    child: Icon(Icons.person, color: AppTheme.plum),
+                    child: const Icon(Icons.person, color: AppTheme.plum),
                   ),
                 ],
               ),
               const SizedBox(height: 20),
-              _WeatherCard(
-                data: _weather,
-                onRefresh: _loadWeather,
-              ),
+              _WeatherCard(data: _weather, onRefresh: _loadWeather),
               const SizedBox(height: 16),
               _TodayOutfitCard(data: _todayOutfit),
               const SizedBox(height: 16),
@@ -253,10 +260,7 @@ class _HomeDashboardPageState extends State<HomeDashboardPage> {
               const SizedBox(height: 20),
               _QuickStats(items: _quickStats),
               const SizedBox(height: 24),
-              Text(
-                "Boosters",
-                style: Theme.of(context).textTheme.titleLarge,
-              ),
+              Text('Boosters', style: Theme.of(context).textTheme.titleLarge),
               const SizedBox(height: 12),
               _ActionGrid(items: _boosters),
             ],
@@ -282,10 +286,7 @@ class _WeatherData {
 }
 
 class _OutfitData {
-  const _OutfitData({
-    required this.title,
-    required this.description,
-  });
+  const _OutfitData({required this.title, required this.description});
 
   final String title;
   final String description;
@@ -302,7 +303,7 @@ class _WeatherCard extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.all(18),
       decoration: BoxDecoration(
-        color: Colors.white.withOpacity(0.92),
+        color: Colors.white.withValues(alpha: 0.92),
         borderRadius: BorderRadius.circular(22),
         boxShadow: AppTheme.softShadows,
       ),
@@ -311,7 +312,7 @@ class _WeatherCard extends StatelessWidget {
           Container(
             padding: const EdgeInsets.all(12),
             decoration: BoxDecoration(
-              color: AppTheme.mint.withOpacity(0.5),
+              color: AppTheme.mint.withValues(alpha: 0.5),
               borderRadius: BorderRadius.circular(16),
             ),
             child: const Icon(Icons.wb_sunny, color: AppTheme.plum, size: 28),
@@ -322,18 +323,15 @@ class _WeatherCard extends StatelessWidget {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  "${data.city} - ${data.temperatureC}°C - ${data.condition}",
+                  '${data.city} - ${data.temperatureC}C - ${data.condition}',
                   style: Theme.of(context).textTheme.titleMedium,
                 ),
                 const SizedBox(height: 6),
-                Text(
-                  data.tip,
-                  style: Theme.of(context).textTheme.bodyMedium,
-                ),
+                Text(data.tip, style: Theme.of(context).textTheme.bodyMedium),
               ],
             ),
           ),
-          TextButton(onPressed: onRefresh, child: const Text("Refresh")),
+          TextButton(onPressed: onRefresh, child: const Text('Refresh')),
         ],
       ),
     );
@@ -371,7 +369,10 @@ class _TodayOutfitCard extends StatelessWidget {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(data.title, style: Theme.of(context).textTheme.titleMedium),
+                Text(
+                  data.title,
+                  style: Theme.of(context).textTheme.titleMedium,
+                ),
                 const SizedBox(height: 6),
                 Text(
                   data.description,
@@ -380,7 +381,7 @@ class _TodayOutfitCard extends StatelessWidget {
               ],
             ),
           ),
-          TextButton(onPressed: () {}, child: const Text("Edit")),
+          TextButton(onPressed: () {}, child: const Text('Edit')),
         ],
       ),
     );
@@ -404,17 +405,17 @@ class _PrimaryCta extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Text(
-            "Get outfit suggestion",
-            style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                  color: Colors.white,
-                ),
+            'Get outfit suggestion',
+            style: Theme.of(
+              context,
+            ).textTheme.titleLarge?.copyWith(color: Colors.white),
           ),
           const SizedBox(height: 6),
           Text(
-            "Tell us your occasion, weather, or vibe and get a complete look.",
-            style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                  color: Colors.white70,
-                ),
+            'Tell us your occasion, weather, or vibe and get a complete look.',
+            style: Theme.of(
+              context,
+            ).textTheme.bodyMedium?.copyWith(color: Colors.white70),
           ),
           const SizedBox(height: 12),
           Align(
@@ -425,7 +426,7 @@ class _PrimaryCta extends StatelessWidget {
                 backgroundColor: Colors.white,
                 foregroundColor: AppTheme.plum,
               ),
-              child: const Text("Suggest Now"),
+              child: const Text('Suggest Now'),
             ),
           ),
         ],
@@ -487,7 +488,7 @@ class _StatCard extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        color: Colors.white.withOpacity(0.95),
+        color: Colors.white.withValues(alpha: 0.95),
         borderRadius: BorderRadius.circular(20),
         boxShadow: AppTheme.softShadows,
       ),
@@ -520,7 +521,9 @@ class _ActionGrid extends StatelessWidget {
       children: List.generate(rows.length, (rowIndex) {
         final row = rows[rowIndex];
         return Padding(
-          padding: EdgeInsets.only(bottom: rowIndex == rows.length - 1 ? 0 : 12),
+          padding: EdgeInsets.only(
+            bottom: rowIndex == rows.length - 1 ? 0 : 12,
+          ),
           child: Row(
             children: List.generate(2, (colIndex) {
               if (colIndex >= row.length) {

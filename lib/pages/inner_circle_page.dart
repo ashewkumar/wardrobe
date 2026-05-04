@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import '../services/api_config.dart';
 import '../services/api_service.dart';
 import 'inner_circle_join_page.dart';
 import '../ui/app_theme.dart';
@@ -469,7 +470,7 @@ class _InnerCirclePageState extends State<InnerCirclePage> {
                       const Text("No wardrobe images yet")
                     else
                       DropdownButtonFormField<String>(
-                        value: selectedImageId,
+                        initialValue: selectedImageId,
                         items: images.map((img) {
                           return DropdownMenuItem<String>(
                             value: img["id"].toString(),
@@ -591,6 +592,7 @@ class _InnerCirclePageState extends State<InnerCirclePage> {
         ],
       ),
       floatingActionButton: FloatingActionButton.extended(
+        heroTag: "inner_circle_share_fab",
         onPressed: _showShareDialog,
         backgroundColor: AppTheme.plum,
         icon: const Icon(Icons.share),
@@ -632,7 +634,9 @@ class InnerCirclePost {
       comments:
           int.tryParse((data["comments"] ?? data["comments_count"] ?? 0).toString()) ?? 0,
       likedByMe: data["liked_by_me"] == true,
-      imageUrl: (data["image_url"] ?? data["image"] ?? data["imageUrl"])?.toString(),
+      imageUrl: ApiConfig.imageUrl(
+        data["image_url"] ?? data["image"] ?? data["imageUrl"],
+      ),
     );
   }
 

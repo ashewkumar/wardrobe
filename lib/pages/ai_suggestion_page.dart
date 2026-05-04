@@ -1,5 +1,6 @@
 ﻿import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import '../services/api_config.dart';
 import '../services/api_service.dart';
 import '../ui/app_theme.dart';
 
@@ -184,8 +185,8 @@ class _AiSuggestionPageState extends State<AiSuggestionPage> {
 
       final images = <String>[];
       for (final item in picked.values) {
-        final url = item["image_url"]?.toString();
-        if (url != null && url.isNotEmpty) {
+        final url = ApiConfig.imageUrl(item["image_url"]);
+        if (url != null) {
           images.add(url);
         }
       }
@@ -280,7 +281,7 @@ class _AiSuggestionPageState extends State<AiSuggestionPage> {
             children: [
               Expanded(
                 child: DropdownButtonFormField<String>(
-                  value: _weather,
+                  initialValue: _weather,
                   items: const [
                     DropdownMenuItem(value: "Warm", child: Text("Warm")),
                     DropdownMenuItem(value: "Cool", child: Text("Cool")),
@@ -294,7 +295,7 @@ class _AiSuggestionPageState extends State<AiSuggestionPage> {
               const SizedBox(width: 12),
               Expanded(
                 child: DropdownButtonFormField<String>(
-                  value: _style,
+                  initialValue: _style,
                   items: const [
                     DropdownMenuItem(value: "Minimal", child: Text("Minimal")),
                     DropdownMenuItem(value: "Bold", child: Text("Bold")),

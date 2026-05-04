@@ -1,9 +1,10 @@
 import 'package:flutter/material.dart';
+
 import '../ui/app_theme.dart';
 import 'calendar_page.dart';
-import 'package:hello_flutter/pages/home_dashboard_page.dart';
+import 'home_dashboard_page.dart';
 import 'inner_circle_page.dart';
-import 'package:hello_flutter/pages/profile_settings_page.dart';
+import 'profile_settings_page.dart';
 import 'travel_page.dart';
 import 'wardrobe_page.dart';
 

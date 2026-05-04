@@ -50,6 +50,8 @@
 
 <key>NSPhotoLibraryUsageDescription</key>
 <string>This app needs photo access</string>
+<key>NSUserNotificationUsageDescription</key>
+<string>This app sends reminders for your saved wardrobe events.</string>
 
 </dict>
 </plist>

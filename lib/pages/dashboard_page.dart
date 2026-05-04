@@ -5,7 +5,9 @@ import '../login_page.dart';
 import '../ui/modern_ui.dart';
 import '../ui/app_theme.dart';
 
+import '../services/api_config.dart';
 import '../services/api_service.dart';
+import '../services/app_time_service.dart';
 import '../services/weather_service.dart';
 import '../services/ai_service.dart';
 import '../services/calendar_service.dart';
@@ -18,7 +20,6 @@ class DashboardPage extends StatefulWidget {
 }
 
 class _DashboardPageState extends State<DashboardPage> {
-
   // ================= USER DATA =================
 
   String? token;
@@ -35,43 +36,36 @@ class _DashboardPageState extends State<DashboardPage> {
   String occasionLabel = "";
   String specialDayTitle = "";
 
-
   // ================= INIT =================
 
- @override
-void initState() {
-  super.initState();
-  loadAuth(); // only this
-}
-
-
-Future<void> loadAuth() async {
-
-  final prefs = await SharedPreferences.getInstance();
-
-  //final token = prefs.getString("token");
-  token = prefs.getString("token");   
-  //final userId = prefs.getInt("user_id");
-userId = prefs.getString("user_id");
-
-  print("LOADED → token=$token , userId=$userId");
-
-  if (token == null || userId == null) {
-    print("TOKEN OR USER ID MISSING");
-    return;
+  @override
+  void initState() {
+    super.initState();
+    loadAuth(); // only this
   }
 
-  // Auto-load suggestion so it highlights on the dashboard
-  await _getSuggestion();
-}
+  Future<void> loadAuth() async {
+    final prefs = await SharedPreferences.getInstance();
 
+    //final token = prefs.getString("token");
+    token = prefs.getString("token");
+    //final userId = prefs.getInt("user_id");
+    userId = prefs.getString("user_id");
 
+    print("LOADED → token=$token , userId=$userId");
 
-  
+    if (token == null || userId == null) {
+      print("TOKEN OR USER ID MISSING");
+      return;
+    }
+
+    // Auto-load suggestion so it highlights on the dashboard
+    await _getSuggestion();
+  }
+
   // ================= LOGOUT =================
 
   Future<void> _logout() async {
-
     final prefs = await SharedPreferences.getInstance();
     await prefs.clear();
 
@@ -79,15 +73,13 @@ userId = prefs.getString("user_id");
 
     Navigator.of(context).pushAndRemoveUntil(
       MaterialPageRoute(builder: (_) => const LoginPage()),
-          (route) => false,
+      (route) => false,
     );
   }
-
 
   // ================= AI SUGGEST =================
 
   Future<void> _getSuggestion() async {
-
     if (token == null || userId == null) {
       print("TOKEN OR USER ID MISSING");
       return;
@@ -105,20 +97,18 @@ userId = prefs.getString("user_id");
     });
 
     try {
-
       // ================= LOCATION (Demo) =================
       double lat = 28.61;
       double lon = 77.20;
 
       // ================= GET WEATHER =================
-      final temp =
-      await WeatherService().getTemperature(lat, lon);
+      final temp = await WeatherService().getTemperature(lat, lon);
 
       // ================= GET SEASON =================
       final season = AIService.getSeason(temp);
 
       // ================= GET OCCASION =================
-      final now = DateTime.now();
+      final now = AppTime.now();
       final specialDate = await CalendarService().getImportantDateFor(
         now,
         token: token!,
@@ -133,16 +123,15 @@ userId = prefs.getString("user_id");
 
       // ================= API CALL =================
       final res = await ApiService.getOutfitSuggestion(
-  token!,
-  season,
-  occasion, userId!,
-);
-
+        token!,
+        season,
+        occasion,
+        userId!,
+      );
 
       print("AI RESPONSE = $res");
 
       if (res != null && res['status'] == true) {
-
         final data = res['data'];
 
         final List<String> urls = [];
@@ -150,27 +139,30 @@ userId = prefs.getString("user_id");
         if (images is List) {
           for (final item in images) {
             if (item is String) {
-              urls.add(item);
+              final url = ApiConfig.imageUrl(item);
+              if (url != null) {
+                urls.add(url);
+              }
             } else if (item is Map && item['image_url'] != null) {
-              urls.add(item['image_url'].toString());
+              final url = ApiConfig.imageUrl(item['image_url']);
+              if (url != null) {
+                urls.add(url);
+              }
             }
           }
         }
 
         setState(() {
-
           outfitName = data['image_name'] ?? "";
 
-          imageUrl = data['image_url'] ?? "";
+          imageUrl = ApiConfig.imageUrl(data['image_url']) ?? "";
           imageUrls = urls;
           seasonLabel = season;
           weatherLabel = "${temp.toStringAsFixed(1)}°C";
           occasionLabel = occasion;
           specialDayTitle = specialDate?.title ?? "";
         });
-
       } else {
-
         setState(() {
           outfitName = "No Outfit Found";
           imageUrl = "";
@@ -181,9 +173,7 @@ userId = prefs.getString("user_id");
           specialDayTitle = specialDate?.title ?? "";
         });
       }
-
     } catch (e) {
-
       print("SUGGEST ERROR: $e");
 
       setState(() {
@@ -202,16 +192,12 @@ userId = prefs.getString("user_id");
     });
   }
 
-
   // ================= UI =================
 
   @override
   Widget build(BuildContext context) {
-
     return Scaffold(
-
       // ================= APP BAR =================
-
       appBar: ModernUI.appBar(
         context: context,
         title: "My Wardrobe",
@@ -219,13 +205,10 @@ userId = prefs.getString("user_id");
       ),
 
       // ================= DRAWER =================
-
       drawer: _buildDrawer(),
 
       // ================= BODY =================
-
       body: ModernUI.pageWrapper(
-
         child: Padding(
           padding: const EdgeInsets.all(20),
 
@@ -233,13 +216,9 @@ userId = prefs.getString("user_id");
             crossAxisAlignment: CrossAxisAlignment.start,
 
             children: [
-
               const Text(
                 "Welcome",
-                style: TextStyle(
-                  fontSize: 26,
-                  fontWeight: FontWeight.bold,
-                ),
+                style: TextStyle(fontSize: 26, fontWeight: FontWeight.bold),
               ),
 
               const SizedBox(height: 4),
@@ -252,30 +231,24 @@ userId = prefs.getString("user_id");
               const SizedBox(height: 25),
 
               // ================= AI CARD =================
-
               _aiSuggestionCard(),
 
               const SizedBox(height: 20),
 
               // ================= DASHBOARD =================
-
               Expanded(
                 child: GridView.count(
-
                   crossAxisCount: 2,
                   crossAxisSpacing: 18,
                   mainAxisSpacing: 18,
 
                   children: [
-
                     ModernUI.dashboardCard(
                       icon: Icons.cloud_upload_outlined,
                       title: "Upload",
                       color: AppTheme.navy,
                       onTap: () {
-                        Navigator.pushNamed(
-                            context,
-                            '/upload-image');
+                        Navigator.pushNamed(context, '/upload-image');
                       },
                     ),
 
@@ -284,14 +257,11 @@ userId = prefs.getString("user_id");
                       title: "Gallery",
                       color: const Color(0xFF3A8BC2),
                       onTap: () {
-                        Navigator.pushNamed(
-                            context,
-                            '/gallery');
+                        Navigator.pushNamed(context, '/gallery');
                       },
                     ),
 
                     // ================= AI =================
-
                     ModernUI.dashboardCard(
                       icon: Icons.auto_awesome_outlined,
                       title: "AI Suggest",
@@ -304,9 +274,7 @@ userId = prefs.getString("user_id");
                       title: "Important Dates",
                       color: const Color(0xFF4B8BBE),
                       onTap: () {
-                        Navigator.pushNamed(
-                            context,
-                            '/important-dates');
+                        Navigator.pushNamed(context, '/important-dates');
                       },
                     ),
 
@@ -315,9 +283,7 @@ userId = prefs.getString("user_id");
                       title: "Profile",
                       color: const Color(0xFF1E3A8A),
                       onTap: () {
-                        Navigator.pushNamed(
-                            context,
-                            '/profile');
+                        Navigator.pushNamed(context, '/profile');
                       },
                     ),
                   ],
@@ -330,13 +296,10 @@ userId = prefs.getString("user_id");
     );
   }
 
-
   // ================= AI CARD =================
 
   Widget _aiSuggestionCard() {
-
     return Container(
-
       width: double.infinity,
 
       padding: const EdgeInsets.all(16),
@@ -352,23 +315,16 @@ userId = prefs.getString("user_id");
         crossAxisAlignment: CrossAxisAlignment.start,
 
         children: [
-
           const Text(
             "Today's Outfit",
-            style: TextStyle(
-              fontSize: 18,
-              fontWeight: FontWeight.bold,
-            ),
+            style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
           ),
 
           const SizedBox(height: 10),
 
           if (specialDayTitle.isNotEmpty)
             Container(
-              padding: const EdgeInsets.symmetric(
-                horizontal: 10,
-                vertical: 6,
-              ),
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
               decoration: BoxDecoration(
                 color: const Color(0xFFE8F1FF),
                 borderRadius: BorderRadius.circular(10),
@@ -407,7 +363,7 @@ userId = prefs.getString("user_id");
           if (occasionLabel.isNotEmpty)
             Text(
               specialDayTitle.isNotEmpty
-                  ? "Occasion: $specialDayTitle (${occasionLabel})"
+                  ? "Occasion: $specialDayTitle ($occasionLabel)"
                   : "Occasion: $occasionLabel",
               style: const TextStyle(color: Colors.black54),
             ),
@@ -416,35 +372,28 @@ userId = prefs.getString("user_id");
             const SizedBox(height: 10),
 
           if (loading)
-
-            const Center(
-              child: CircularProgressIndicator(),
-            )
-
+            const Center(child: CircularProgressIndicator())
           else if (outfitName.isNotEmpty)
-
             Column(
               children: [
                 Row(
                   children: [
-
                     if (imageUrl.isNotEmpty)
-
                       ClipRRect(
-  borderRadius: BorderRadius.circular(10),
+                        borderRadius: BorderRadius.circular(10),
 
-  child: Image.network(
-    imageUrl, // ??? Already full URL
+                        child: Image.network(
+                          imageUrl, // ??? Already full URL
 
-    width: 80,
-    height: 80,
-    fit: BoxFit.cover,
+                          width: 80,
+                          height: 80,
+                          fit: BoxFit.cover,
 
-    errorBuilder: (c, e, s) {
-      return const Icon(Icons.broken_image);
-    },
-  ),
-),
+                          errorBuilder: (c, e, s) {
+                            return const Icon(Icons.broken_image);
+                          },
+                        ),
+                      ),
 
                     const SizedBox(width: 12),
 
@@ -485,9 +434,7 @@ userId = prefs.getString("user_id");
                   ),
               ],
             )
-
           else if (imageUrls.isNotEmpty)
-
             SizedBox(
               height: 96,
               child: ListView.separated(
@@ -503,16 +450,13 @@ userId = prefs.getString("user_id");
                       width: 96,
                       height: 96,
                       fit: BoxFit.cover,
-                      errorBuilder: (c, e, s) =>
-                          const Icon(Icons.broken_image),
+                      errorBuilder: (c, e, s) => const Icon(Icons.broken_image),
                     ),
                   );
                 },
               ),
             )
-
           else
-
             const Text(
               "Tap 'AI Suggest' to get outfit",
               style: TextStyle(color: Colors.black54),
@@ -522,11 +466,9 @@ userId = prefs.getString("user_id");
     );
   }
 
-
   // ================= DRAWER =================
 
   Widget _buildDrawer() {
-
     return Drawer(
       backgroundColor: AppTheme.softBg,
 
@@ -534,34 +476,22 @@ userId = prefs.getString("user_id");
         padding: EdgeInsets.zero,
 
         children: [
-
           // ================= HEADER =================
-
           Container(
             height: 200,
 
             decoration: const BoxDecoration(
-              gradient: LinearGradient(
-                colors: [
-                  AppTheme.navy,
-                  AppTheme.sky,
-                ],
-              ),
+              gradient: LinearGradient(colors: [AppTheme.navy, AppTheme.sky]),
             ),
 
             child: const Column(
               mainAxisAlignment: MainAxisAlignment.center,
 
               children: [
-
                 CircleAvatar(
                   radius: 42,
                   backgroundColor: AppTheme.softBg,
-                  child: Icon(
-                    Icons.person,
-                    size: 45,
-                    color: AppTheme.navy,
-                  ),
+                  child: Icon(Icons.person, size: 45, color: AppTheme.navy),
                 ),
 
                 SizedBox(height: 12),
@@ -589,9 +519,7 @@ userId = prefs.getString("user_id");
             title: "Upload Image",
             onTap: () {
               Navigator.pop(context);
-              Navigator.pushNamed(
-                  context,
-                  '/upload-image');
+              Navigator.pushNamed(context, '/upload-image');
             },
           ),
 
@@ -600,9 +528,7 @@ userId = prefs.getString("user_id");
             title: "Gallery",
             onTap: () {
               Navigator.pop(context);
-              Navigator.pushNamed(
-                  context,
-                  '/gallery');
+              Navigator.pushNamed(context, '/gallery');
             },
           ),
 
@@ -611,9 +537,7 @@ userId = prefs.getString("user_id");
             title: "Settings",
             onTap: () {
               Navigator.pop(context);
-              Navigator.pushNamed(
-                  context,
-                  '/settings');
+              Navigator.pushNamed(context, '/settings');
             },
           ),
 
@@ -622,9 +546,7 @@ userId = prefs.getString("user_id");
             title: "Important Dates",
             onTap: () {
               Navigator.pop(context);
-              Navigator.pushNamed(
-                  context,
-                  '/important-dates');
+              Navigator.pushNamed(context, '/important-dates');
             },
           ),
 
@@ -633,9 +555,7 @@ userId = prefs.getString("user_id");
             title: "Profile",
             onTap: () {
               Navigator.pop(context);
-              Navigator.pushNamed(
-                  context,
-                  '/profile');
+              Navigator.pushNamed(context, '/profile');
             },
           ),
 
@@ -652,7 +572,6 @@ userId = prefs.getString("user_id");
     );
   }
 
-
   // ================= DRAWER ITEM =================
 
   Widget _drawerItem({
@@ -661,15 +580,10 @@ userId = prefs.getString("user_id");
     Color color = Colors.black87,
     required VoidCallback onTap,
   }) {
-
     return ListTile(
-
       leading: Icon(icon, color: color),
 
-      title: Text(
-        title,
-        style: TextStyle(color: color),
-      ),
+      title: Text(title, style: TextStyle(color: color)),
 
       onTap: onTap,
     );

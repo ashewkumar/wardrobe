@@ -2,6 +2,7 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:image_picker/image_picker.dart';
+import '../services/api_config.dart';
 import '../services/api_service.dart';
 import '../ui/app_theme.dart';
 import 'upload_image_page.dart';
@@ -289,7 +290,7 @@ class _WardrobePageState extends State<WardrobePage> {
 
   void _showDetails(Map img) {
     final category = img["category"] is Map ? img["category"] as Map : {};
-    final imageUrl = img["image_url"]?.toString() ?? "";
+    final imageUrl = ApiConfig.imageUrl(img["image_url"]);
 
     showModalBottomSheet(
       context: context,
@@ -309,7 +310,7 @@ class _WardrobePageState extends State<WardrobePage> {
                   color: AppTheme.cloud,
                   borderRadius: BorderRadius.circular(16),
                 ),
-                child: imageUrl.isEmpty
+                child: imageUrl == null
                     ? const Icon(Icons.image, size: 70, color: Colors.black38)
                     : ClipRRect(
                         borderRadius: BorderRadius.circular(16),
@@ -402,8 +403,9 @@ class _WardrobePageState extends State<WardrobePage> {
                             final item = filtered[index];
                             final category =
                                 item["category"] is Map ? item["category"] as Map : {};
-                            final imageUrl =
-                                item["image_url"]?.toString() ?? "";
+                            final imageUrl = ApiConfig.imageUrl(
+                              item["image_url"],
+                            );
 
                             return InkWell(
                               onTap: () => _showDetails(item as Map),
@@ -428,7 +430,7 @@ class _WardrobePageState extends State<WardrobePage> {
                                                 top: Radius.circular(20),
                                               ),
                                             ),
-                                            child: imageUrl.isEmpty
+                                            child: imageUrl == null
                                                 ? const Icon(
                                                     Icons.image,
                                                     color: AppTheme.plum,
@@ -553,6 +555,7 @@ class _WardrobePageState extends State<WardrobePage> {
         ),
       ),
       floatingActionButton: FloatingActionButton.extended(
+        heroTag: "wardrobe_add_item_fab",
         onPressed: () => Navigator.of(context).push(
           MaterialPageRoute(builder: (_) => const UploadImagePage()),
         ),

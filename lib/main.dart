@@ -1,23 +1,42 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'pages/auth_page.dart';
 import 'pages/home_shell.dart';
 import 'pages/onboarding_page.dart';
 import 'pages/splash_page.dart';
+import 'services/analytics_service.dart';
+import 'services/app_time_service.dart';
+import 'services/notification_service.dart';
+import 'services/stability_service.dart';
 import 'ui/app_theme.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
-  runApp(MyApp());
+  await AppTime.init();
+  await AppAnalyticsService.instance.init();
+  await AppStabilityService.instance.init();
+  await AppNotificationService.instance.init();
+  await AppAnalyticsService.instance.track('app_open');
+
+  runZonedGuarded(
+    () => runApp(const MyApp()),
+    (error, stack) => AppStabilityService.instance.recordError(
+      'run_zoned_guarded',
+      '$error\n$stack',
+    ),
+  );
 }
 
 class MyApp extends StatelessWidget {
-  MyApp({super.key});
+  const MyApp({super.key});
 
   Future<_EntryState> _resolveEntry() async {
     final prefs = await SharedPreferences.getInstance();
     final token = prefs.getString(_PrefsKeys.authToken);
-    final onboardingDone = prefs.getBool(_PrefsKeys.onboardingComplete) ?? false;
+    final onboardingDone =
+        prefs.getBool(_PrefsKeys.onboardingComplete) ?? false;
     return _EntryState(onboardingDone: onboardingDone, hasToken: token != null);
   }
 

@@ -1,4 +1,5 @@
 import 'api_service.dart';
+import 'app_time_service.dart';
 
 class ImportantDate {
   final String id;
@@ -31,7 +32,7 @@ class ImportantDate {
   static ImportantDate fromJson(Map<String, dynamic> json) {
     return ImportantDate(
       id: json["id"].toString(),
-      date: DateTime.parse(json["date"].toString()),
+      date: AppTime.parseApiDate(json["date"].toString()),
       title: json["title"] ?? "",
       occasion: json["occasion"] ?? "",
       notes: json["notes"] ?? "",

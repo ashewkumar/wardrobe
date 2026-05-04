@@ -1,6 +1,6 @@
 import 'dart:io';
 import 'dart:math' as math;
-import 'dart:convert';
+
 import 'package:flutter/material.dart';
 import 'package:image/image.dart' as img;
 import 'package:image_picker/image_picker.dart';
@@ -25,7 +25,6 @@ class _UploadImagePageState extends State<UploadImagePage> {
   bool _loadingOptions = false;
   bool _autoFillingDetails = false;
   bool _imagePreparedWithLens = false;
-  bool _removingBackground = false;
 
   final ImagePicker picker = ImagePicker();
 
@@ -103,48 +102,7 @@ class _UploadImagePageState extends State<UploadImagePage> {
   @override
   void initState() {
     super.initState();
-    _resetFormValues(notify: false);
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (mounted) _resetFormValues();
-    });
     _loadCategoryOptions();
-  }
-
-  void _resetFormValues({bool clearImage = true, bool notify = true}) {
-    void reset() {
-      if (clearImage) {
-        _image = null;
-        _imagePreparedWithLens = false;
-      }
-
-      _loading = false;
-      _autoFillingDetails = false;
-      _removingBackground = false;
-
-      _nameController.clear();
-      _descController.clear();
-      _categoryName.clear();
-      _typeController.clear();
-      _genderController.clear();
-      _colorController.clear();
-      _sizeController.clear();
-      _seasonController.clear();
-      _occasionController.clear();
-
-      _selectedCategory = null;
-      _selectedType = null;
-      _selectedGender = null;
-      _selectedColor = null;
-      _selectedSize = null;
-      _selectedSeason = null;
-      _selectedOccasion = null;
-    }
-
-    if (notify && mounted) {
-      setState(reset);
-    } else {
-      reset();
-    }
   }
 
   Future<void> _loadCategoryOptions() async {
@@ -272,8 +230,6 @@ class _UploadImagePageState extends State<UploadImagePage> {
     ImageSource source, {
     bool useLensCrop = false,
   }) async {
-    _resetFormValues();
-
     final picked = await picker.pickImage(
       source: source,
       imageQuality: 70,
@@ -282,8 +238,6 @@ class _UploadImagePageState extends State<UploadImagePage> {
     );
 
     if (picked == null || !mounted) return;
-
-    _resetFormValues();
 
     File selectedFile = File(picked.path);
 
@@ -303,136 +257,11 @@ class _UploadImagePageState extends State<UploadImagePage> {
       _imagePreparedWithLens = useLensCrop;
     });
 
-    _resetFormValues(clearImage: false);
+    await _autoFillDetailsFromImage(selectedFile);
   }
 
-  Future<void> _processImage(File file, {bool showStatusMessage = true}) async {
-    final prefs = await SharedPreferences.getInstance();
-    final token = prefs.getString('token');
-
-    if (token == null || token.isEmpty) {
-      showMessage("Session expired");
-      return;
-    }
-
-    setState(() => _loading = true);
-
-    try {
-      final request = http.MultipartRequest(
-        'POST',
-        ApiConfig.uri("process-image"), // ✅ NEW API
-      );
-
-      request.headers.addAll({
-        'Accept': 'application/json',
-        'Authorization': 'Bearer $token',
-      });
-
-      request.files.add(await http.MultipartFile.fromPath('image', file.path));
-
-      final streamedResponse = await request.send();
-      final response = await http.Response.fromStream(streamedResponse);
-
-      print("PROCESS STATUS: ${response.statusCode}");
-      print("PROCESS BODY: ${response.body}");
-
-      if (response.statusCode != 200) {
-        if (showStatusMessage) {
-          showMessage("Processing failed (${response.statusCode})");
-        }
-        return;
-      }
-
-      final result = jsonDecode(response.body);
-
-      if (result['status'] != true) {
-        if (showStatusMessage) showMessage("Processing failed");
-        return;
-      }
-
-      final data = result['data'];
-
-      if (data is! Map) {
-        if (showStatusMessage) showMessage("Processing failed");
-        return;
-      }
-
-      setState(() {
-        _applyDetectedDetails(data, overwrite: true);
-      });
-
-      if (showStatusMessage) showMessage("Image processed successfully");
-    } catch (e) {
-      print("PROCESS ERROR: $e");
-      if (showStatusMessage) showMessage("Something went wrong");
-    } finally {
-      if (mounted) setState(() => _loading = false);
-    }
-  }
-
-  Future<void> _detectDetailsForSelectedImage() async {
-    if (_image == null) {
-      showMessage("Select image first");
-      return;
-    }
-
-    await _processImage(_image!);
-    if (!mounted || _image == null) return;
-    await _autoFillDetailsFromImage(_image!);
-  }
-
-  Future<void> _removeBackgroundAndAutoFill() async {
-    final currentImage = _image;
-    if (currentImage == null) {
-      showMessage("Select image first");
-      return;
-    }
-
-    final prefs = await SharedPreferences.getInstance();
-    final token = prefs.getString('token');
-
-    if (token == null || token.isEmpty) {
-      showMessage("Session expired. Please login again.");
-      return;
-    }
-
-    setState(() {
-      _removingBackground = true;
-      _autoFillingDetails = true;
-    });
-
-    try {
-      final result = await ApiService.removeBackground(token, currentImage);
-      if (result == null) {
-        showMessage("Background removal failed");
-        return;
-      }
-
-      if (!mounted) return;
-
-      setState(() {
-        _image = result.file;
-        _imagePreparedWithLens = false;
-        _applyDetectedDetails(result.data, overwrite: true);
-      });
-
-      await _autoFillDetailsFromImage(result.file, force: true);
-      if (mounted) showMessage("Background removed and details filled");
-    } finally {
-      if (mounted) {
-        setState(() {
-          _removingBackground = false;
-          _autoFillingDetails = false;
-        });
-      }
-    }
-  }
-
-  Future<void> _autoFillDetailsFromImage(
-    File imageFile, {
-    bool force = false,
-  }) async {
-    if (_autoFillingDetails && !force) return;
+  Future<void> _autoFillDetailsFromImage(File imageFile) async {
+    if (_autoFillingDetails) return;
 
     final previousValues = [
       _nameController.text,
@@ -532,121 +361,6 @@ class _UploadImagePageState extends State<UploadImagePage> {
     File imageFile,
   ) async {
     return _buildLocalImageDetailSuggestion(imageFile);
-  }
-
-  void _applyDetectedDetails(
-    Map<dynamic, dynamic>? data, {
-    bool overwrite = false,
-  }) {
-    if (data == null) return;
-
-    final category = _mapFrom(data['category']);
-
-    void setField(TextEditingController controller, List<dynamic> values) {
-      if (!overwrite && controller.text.trim().isNotEmpty) return;
-      final value = _firstResponseText(values);
-      if (value == null) return;
-      controller.text = value;
-    }
-
-    setField(_nameController, [
-      data['image_name'],
-      data['imageName'],
-      data['name'],
-      data['title'],
-      data['label'],
-    ]);
-    setField(_descController, [
-      data['description'],
-      data['desc'],
-      data['details'],
-      data['caption'],
-    ]);
-    setField(_categoryName, [
-      data['category_name'],
-      data['categoryName'],
-      category?['name'],
-      category?['category_name'],
-      category?['categoryName'],
-      data['category'] is Map ? null : data['category'],
-    ]);
-    setField(_typeController, [
-      data['type'],
-      data['item_type'],
-      data['itemType'],
-      category?['type'],
-    ]);
-    setField(_genderController, [
-      data['gender'],
-      data['sex'],
-      data['audience'],
-      category?['gender'],
-    ]);
-    setField(_colorController, [
-      data['colour'],
-      data['color'],
-      data['item_color'],
-      data['itemColor'],
-      category?['colour'],
-      category?['color'],
-    ]);
-    setField(_sizeController, [
-      data['size'],
-      data['item_size'],
-      data['itemSize'],
-      category?['size'],
-    ]);
-    setField(_seasonController, [
-      data['season'],
-      data['weather'],
-      category?['season'],
-    ]);
-    setField(_occasionController, [
-      data['occasion'],
-      data['use_case'],
-      data['useCase'],
-      data['style'],
-      category?['occasion'],
-    ]);
-
-    _syncSelectionsWithControllers();
-  }
-
-  Map<String, dynamic>? _mapFrom(dynamic value) {
-    if (value is Map<String, dynamic>) return value;
-    if (value is Map) {
-      return value.map((key, value) => MapEntry(key.toString(), value));
-    }
-    return null;
-  }
-
-  String? _firstResponseText(List<dynamic> values) {
-    for (final value in values) {
-      if (value == null) continue;
-      if (value is Map) {
-        final map = _mapFrom(value);
-        final nested = _firstResponseText([
-          map?['name'],
-          map?['category_name'],
-          map?['categoryName'],
-          map?['title'],
-          map?['label'],
-        ]);
-        if (nested != null) return nested;
-        continue;
-      }
-      if (value is Iterable) {
-        final nested = _firstResponseText(value.toList());
-        if (nested != null) return nested;
-        continue;
-      }
-
-      final text = value.toString().trim();
-      if (text.isNotEmpty && text.toLowerCase() != 'null') {
-        return text;
-      }
-    }
-    return null;
   }
 
   Future<_ImageDetailSuggestion> _buildLocalImageDetailSuggestion(
@@ -951,6 +665,16 @@ class _UploadImagePageState extends State<UploadImagePage> {
     return value.toLowerCase().replaceAll(RegExp(r'[^a-z0-9]+'), '');
   }
 
+  Future<void> _detectDetailsForSelectedImage() async {
+    final currentImage = _image;
+    if (currentImage == null) {
+      showMessage("Select image first");
+      return;
+    }
+
+    await _autoFillDetailsFromImage(currentImage);
+  }
+
   // ---------------- UPLOAD IMAGE ----------------
 
   Future uploadImage() async {
@@ -1037,7 +761,31 @@ class _UploadImagePageState extends State<UploadImagePage> {
 
     if (response.statusCode == 200 || response.statusCode == 201) {
       showMessage("Upload successful");
-      _resetFormValues();
+
+      setState(() {
+        _image = null;
+        _imagePreparedWithLens = false;
+
+        _nameController.clear();
+        _descController.clear();
+
+        _categoryName.clear();
+        _typeController.clear();
+        _genderController.clear();
+        _colorController.clear();
+        _sizeController.clear();
+        _seasonController.clear();
+        _occasionController.clear();
+
+        _selectedCategory = null;
+        _selectedType = null;
+        _selectedGender = null;
+        _selectedColor = null;
+        _selectedSize = null;
+        _selectedSeason = null;
+        _selectedOccasion = null;
+      });
+
       _loadCategoryOptions();
     } else if (response.statusCode == 401) {
       showMessage("Unauthorized. Please login again.");
@@ -1228,50 +976,24 @@ class _UploadImagePageState extends State<UploadImagePage> {
 
               const SizedBox(height: 12),
 
-              if (_image != null) ...[
-                SizedBox(
-                  width: double.infinity,
-                  height: 45,
-                  child: ElevatedButton.icon(
-                    onPressed:
-                        (_removingBackground || _autoFillingDetails || _loading)
-                        ? null
-                        : _removeBackgroundAndAutoFill,
-                    icon: _removingBackground
-                        ? const SizedBox(
-                            width: 16,
-                            height: 16,
-                            child: CircularProgressIndicator(strokeWidth: 2),
-                          )
-                        : const Icon(Icons.auto_fix_high),
-                    label: Text(
-                      _removingBackground
-                          ? "Removing background..."
-                          : "Remove background and auto-fill",
-                    ),
+              Align(
+                alignment: Alignment.centerLeft,
+                child: TextButton.icon(
+                  onPressed: (_image == null || _autoFillingDetails || _loading)
+                      ? null
+                      : _detectDetailsForSelectedImage,
+                  icon: _autoFillingDetails
+                      ? const SizedBox(
+                          width: 16,
+                          height: 16,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        )
+                      : const Icon(Icons.auto_awesome),
+                  label: const Text(
+                    "Detect category, type, color, gender and description",
                   ),
                 ),
-
-                const SizedBox(height: 8),
-
-                Align(
-                  alignment: Alignment.centerLeft,
-                  child: TextButton.icon(
-                    onPressed:
-                        (_autoFillingDetails || _removingBackground || _loading)
-                        ? null
-                        : _detectDetailsForSelectedImage,
-                    icon: _autoFillingDetails
-                        ? const SizedBox(
-                            width: 16,
-                            height: 16,
-                            child: CircularProgressIndicator(strokeWidth: 2),
-                          )
-                        : const Icon(Icons.auto_awesome),
-                    label: const Text("Auto-fill without removing background"),
-                  ),
-                ),
-              ],
+              ),
 
               const SizedBox(height: 20),
 

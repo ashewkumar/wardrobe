@@ -55,6 +55,40 @@ CREATE TABLE IF NOT EXISTS important_dates (
     ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
+-- Saved outfits
+CREATE TABLE IF NOT EXISTS outfits (
+  id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+  user_id BIGINT UNSIGNED NOT NULL,
+  name VARCHAR(180) NOT NULL,
+  occasion VARCHAR(120) NULL,
+  notes TEXT NULL,
+  created_at TIMESTAMP NULL,
+  updated_at TIMESTAMP NULL,
+  INDEX idx_outfits_user_id (user_id),
+  CONSTRAINT fk_outfits_user
+    FOREIGN KEY (user_id) REFERENCES users(id)
+    ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+CREATE TABLE IF NOT EXISTS outfit_items (
+  id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+  outfit_id BIGINT UNSIGNED NOT NULL,
+  user_image_id BIGINT UNSIGNED NOT NULL,
+  slot VARCHAR(60) NULL,
+  sort_order INT UNSIGNED NOT NULL DEFAULT 0,
+  created_at TIMESTAMP NULL,
+  updated_at TIMESTAMP NULL,
+  INDEX idx_outfit_items_outfit_id (outfit_id),
+  INDEX idx_outfit_items_user_image_id (user_image_id),
+  UNIQUE KEY uq_outfit_items_outfit_image (outfit_id, user_image_id),
+  CONSTRAINT fk_outfit_items_outfit
+    FOREIGN KEY (outfit_id) REFERENCES outfits(id)
+    ON DELETE CASCADE,
+  CONSTRAINT fk_outfit_items_user_image
+    FOREIGN KEY (user_image_id) REFERENCES user_images(id)
+    ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
 -- Inner circle (shared outfits + invites)
 CREATE TABLE IF NOT EXISTS inner_circle_invites (
   id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,

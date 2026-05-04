@@ -1,9 +1,79 @@
 import 'dart:convert';
 import 'dart:io';
 import 'package:http/http.dart' as http;
+import 'package:http_parser/http_parser.dart';
 import 'api_config.dart';
 
+class RemoveBackgroundResult {
+  RemoveBackgroundResult({required this.file, this.data});
+
+  final File file;
+  final Map<String, dynamic>? data;
+}
+
 class ApiService {
+  static MediaType _imageContentType(String path) {
+    final lowerPath = path.toLowerCase();
+    if (lowerPath.endsWith('.png')) {
+      return MediaType('image', 'png');
+    }
+    if (lowerPath.endsWith('.webp')) {
+      return MediaType('image', 'webp');
+    }
+    return MediaType('image', 'jpeg');
+  }
+
+  static String _extensionForContentType(String? contentType) {
+    final lower = contentType?.toLowerCase() ?? "";
+    if (lower.contains("png")) {
+      return "png";
+    }
+    if (lower.contains("webp")) {
+      return "webp";
+    }
+    return "jpg";
+  }
+
+  static String? _extractImageString(Map<String, dynamic> json) {
+    final candidates = <dynamic>[
+      json["image_url"],
+      json["url"],
+      json["image"],
+      json["image_base64"],
+      json["base64"],
+      json["cutout"],
+      json["result"],
+      if (json["data"] is Map<String, dynamic>) ...[
+        (json["data"] as Map<String, dynamic>)["image_url"],
+        (json["data"] as Map<String, dynamic>)["url"],
+        (json["data"] as Map<String, dynamic>)["image"],
+        (json["data"] as Map<String, dynamic>)["image_base64"],
+        (json["data"] as Map<String, dynamic>)["base64"],
+        (json["data"] as Map<String, dynamic>)["cutout"],
+        (json["data"] as Map<String, dynamic>)["result"],
+      ],
+    ];
+
+    for (final candidate in candidates) {
+      if (candidate is String && candidate.trim().isNotEmpty) {
+        return candidate.trim();
+      }
+    }
+
+    return null;
+  }
+
+  static Future<File> _writeProcessedImage(
+    List<int> bytes, {
+    required String preferredExtension,
+  }) async {
+    final dir = Directory.systemTemp.createTempSync("wardrobe_bg_");
+    final file = File(
+      "${dir.path}${Platform.pathSeparator}processed_${DateTime.now().millisecondsSinceEpoch}.$preferredExtension",
+    );
+    await file.writeAsBytes(bytes, flush: true);
+    return file;
+  }
 
   // ================= LOGIN =================
 
@@ -16,13 +86,8 @@ class ApiService {
     try {
       final res = await http.post(
         url,
-        headers: {
-          "Accept": "application/json",
-        },
-        body: {
-          "email": email,
-          "password": password,
-        },
+        headers: {"Accept": "application/json"},
+        body: {"email": email, "password": password},
       );
 
       print("LOGIN STATUS: ${res.statusCode}");
@@ -42,6 +107,76 @@ class ApiService {
     return null;
   }
 
+  static Map<String, String> _authHeaders(String token) {
+    return {"Accept": "application/json", "Authorization": "Bearer $token"};
+  }
+
+  static Map<String, dynamic>? _decodeResponseBody(String body) {
+    try {
+      final decoded = jsonDecode(body);
+      if (decoded is Map<String, dynamic>) {
+        return decoded;
+      }
+      if (decoded is Map) {
+        return decoded.map((key, value) => MapEntry(key.toString(), value));
+      }
+    } catch (_) {
+      // Fall through to null.
+    }
+    return null;
+  }
+
+  static String? _extractErrorMessage(String body) {
+    final decoded = _decodeResponseBody(body);
+    if (decoded == null) {
+      final text = body.trim();
+      return text.isEmpty ? null : text;
+    }
+
+    final directMessage = decoded["message"]?.toString().trim();
+    if (directMessage != null && directMessage.isNotEmpty) {
+      return directMessage;
+    }
+
+    final errors = decoded["errors"];
+    if (errors is Map) {
+      for (final value in errors.values) {
+        if (value is List && value.isNotEmpty) {
+          final first = value.first.toString().trim();
+          if (first.isNotEmpty) return first;
+        }
+        final text = value?.toString().trim();
+        if (text != null && text.isNotEmpty) return text;
+      }
+    }
+
+    return null;
+  }
+
+  static Map<String, String> _outfitBodyFields({
+    String? methodOverride,
+    String? userId,
+    required String name,
+    String? occasion,
+    String? notes,
+    required List<String> imageIds,
+  }) {
+    final fields = <String, String>{
+      if (methodOverride != null) "_method": methodOverride,
+      if (userId != null) "user_id": userId,
+      "name": name,
+      if (occasion != null && occasion.trim().isNotEmpty)
+        "occasion": occasion.trim(),
+      if (notes != null && notes.trim().isNotEmpty) "notes": notes.trim(),
+    };
+
+    for (var i = 0; i < imageIds.length; i++) {
+      fields["image_ids[$i]"] = imageIds[i];
+    }
+
+    return fields;
+  }
+
   // ================= AI OUTFIT =================
 
   static Future<dynamic> getOutfitSuggestion(
@@ -52,19 +187,12 @@ class ApiService {
   ) async {
     final url = ApiConfig.uri(
       "outfit/suggest",
-      query: {
-        "season": season,
-        "occasion": occasion,
-        "user_id": userId,
-      },
+      query: {"season": season, "occasion": occasion, "user_id": userId},
     );
 
     final res = await http.get(
       url,
-      headers: {
-        "Authorization": "Bearer $token",
-        "Accept": "application/json",
-      },
+      headers: {"Authorization": "Bearer $token", "Accept": "application/json"},
     );
 
     print("AI STATUS: ${res.statusCode}");
@@ -77,16 +205,124 @@ class ApiService {
     return null;
   }
 
+  static Future<dynamic> getSavedOutfits(String token, String userId) async {
+    final url = ApiConfig.uri("outfits", query: {"user_id": userId});
+
+    try {
+      final res = await http.get(
+        url,
+        headers: {
+          "Authorization": "Bearer $token",
+          "Accept": "application/json",
+        },
+      );
+
+      print("GET OUTFITS STATUS: ${res.statusCode}");
+      print("GET OUTFITS BODY: ${res.body}");
+
+      if (res.statusCode == 200) {
+        return jsonDecode(res.body);
+      }
+
+      return {
+        "status": false,
+        "message": _extractErrorMessage(res.body) ?? "Failed to load outfits",
+      };
+    } catch (e) {
+      print("GET OUTFITS ERROR: $e");
+    }
+
+    return null;
+  }
+
+  static Future<dynamic> createOutfit(
+    String token, {
+    required String userId,
+    required String name,
+    String? occasion,
+    String? notes,
+    required List<String> imageIds,
+  }) async {
+    final url = ApiConfig.uri("outfits");
+
+    try {
+      final res = await http.post(
+        url,
+        headers: _authHeaders(token),
+        body: _outfitBodyFields(
+          userId: userId,
+          name: name,
+          occasion: occasion,
+          notes: notes,
+          imageIds: imageIds,
+        ),
+      );
+
+      print("CREATE OUTFIT STATUS: ${res.statusCode}");
+      print("CREATE OUTFIT BODY: ${res.body}");
+
+      if (res.statusCode == 200 || res.statusCode == 201) {
+        return jsonDecode(res.body);
+      }
+
+      return {
+        "status": false,
+        "message": _extractErrorMessage(res.body) ?? "Failed to save outfit",
+      };
+    } catch (e) {
+      print("CREATE OUTFIT ERROR: $e");
+    }
+
+    return null;
+  }
+
+  static Future<dynamic> updateOutfit(
+    String token,
+    String id, {
+    String? userId,
+    required String name,
+    String? occasion,
+    String? notes,
+    required List<String> imageIds,
+  }) async {
+    final url = ApiConfig.uri("outfits/$id");
+
+    try {
+      final res = await http.post(
+        url,
+        headers: _authHeaders(token),
+        body: _outfitBodyFields(
+          methodOverride: "PUT",
+          userId: userId,
+          name: name,
+          occasion: occasion,
+          notes: notes,
+          imageIds: imageIds,
+        ),
+      );
+
+      print("UPDATE OUTFIT STATUS: ${res.statusCode}");
+      print("UPDATE OUTFIT BODY: ${res.body}");
+
+      if (res.statusCode == 200) {
+        return jsonDecode(res.body);
+      }
+
+      return {
+        "status": false,
+        "message": _extractErrorMessage(res.body) ?? "Failed to update outfit",
+      };
+    } catch (e) {
+      print("UPDATE OUTFIT ERROR: $e");
+    }
+
+    return null;
+  }
+
   // ================= IMPORTANT DATES =================
 
-  static Future<dynamic> getImportantDates(
-    String token,
-    String userId,
-  ) async {
-    final url = ApiConfig.uri(
-      "important-dates",
-      query: {"user_id": userId},
-    );
+  static Future<dynamic> getImportantDates(String token, String userId) async {
+    final url = ApiConfig.uri("important-dates", query: {"user_id": userId});
 
     try {
       final res = await http.get(
@@ -188,10 +424,7 @@ class ApiService {
     return null;
   }
 
-  static Future<dynamic> deleteImportantDate(
-    String token,
-    String id,
-  ) async {
+  static Future<dynamic> deleteImportantDate(String token, String id) async {
     final url = ApiConfig.uri("important-dates/$id");
 
     try {
@@ -218,14 +451,8 @@ class ApiService {
 
   // ================= TRAVEL PLANS =================
 
-  static Future<dynamic> getTravelPlans(
-    String token,
-    String userId,
-  ) async {
-    final url = ApiConfig.uri(
-      "travel-plans",
-      query: {"user_id": userId},
-    );
+  static Future<dynamic> getTravelPlans(String token, String userId) async {
+    final url = ApiConfig.uri("travel-plans", query: {"user_id": userId});
 
     try {
       final res = await http.get(
@@ -324,10 +551,7 @@ class ApiService {
     return null;
   }
 
-  static Future<dynamic> deleteTravelPlan(
-    String token,
-    String id,
-  ) async {
+  static Future<dynamic> deleteTravelPlan(String token, String id) async {
     final url = ApiConfig.uri("travel-plans/$id");
 
     try {
@@ -349,10 +573,7 @@ class ApiService {
     return null;
   }
 
-  static Future<dynamic> getTravelItems(
-    String token,
-    String planId,
-  ) async {
+  static Future<dynamic> getTravelItems(String token, String planId) async {
     final url = ApiConfig.uri("travel-plans/$planId/items");
 
     try {
@@ -441,10 +662,7 @@ class ApiService {
     return null;
   }
 
-  static Future<dynamic> deleteTravelItem(
-    String token,
-    String id,
-  ) async {
+  static Future<dynamic> deleteTravelItem(String token, String id) async {
     final url = ApiConfig.uri("travel-items/$id");
 
     try {
@@ -468,14 +686,8 @@ class ApiService {
 
   // ================= IMAGES =================
 
-  static Future<dynamic> getImages(
-    String token,
-    String userId,
-  ) async {
-    final url = ApiConfig.uri(
-      "images",
-      query: {"user_id": userId},
-    );
+  static Future<dynamic> getImages(String token, String userId) async {
+    final url = ApiConfig.uri("images", query: {"user_id": userId});
 
     try {
       final res = await http.get(
@@ -496,10 +708,7 @@ class ApiService {
     return null;
   }
 
-  static Future<dynamic> deleteImage(
-    String token,
-    String id,
-  ) async {
+  static Future<dynamic> deleteImage(String token, String id) async {
     final url = ApiConfig.uri("images/$id");
 
     try {
@@ -536,18 +745,17 @@ class ApiService {
           "Accept": "application/json",
           "Authorization": "Bearer $token",
         });
-        request.fields.addAll({
-          "_method": "PUT",
-          ...fields,
-        });
+        request.fields.addAll({"_method": "PUT", ...fields});
 
-        final bytes = await imageFile.readAsBytes();
-        final fileName = imageFile.path.split('/').last;
+        final filePath = imageFile.path;
+        final normalizedPath = filePath.replaceAll('\\', '/');
+        final fileName = normalizedPath.split('/').last;
         request.files.add(
-          http.MultipartFile.fromBytes(
+          await http.MultipartFile.fromPath(
             "image",
-            bytes,
+            filePath,
             filename: fileName,
+            contentType: _imageContentType(filePath),
           ),
         );
 
@@ -564,10 +772,7 @@ class ApiService {
             "Accept": "application/json",
             "Authorization": "Bearer $token",
           },
-          body: {
-            "_method": "PUT",
-            ...fields,
-          },
+          body: {"_method": "PUT", ...fields},
         );
 
         if (res.statusCode == 200) {
@@ -581,16 +786,150 @@ class ApiService {
     return null;
   }
 
+  static Future<RemoveBackgroundResult?> removeBackground(
+    String token,
+    File imageFile,
+  ) async {
+    final url = ApiConfig.removeBackgroundUri();
+
+    try {
+      final request = http.MultipartRequest("POST", url);
+      request.headers.addAll({
+        "Accept": "application/json, image/*",
+        "Authorization": "Bearer $token",
+      });
+
+      final filePath = imageFile.path;
+      final normalizedPath = filePath.replaceAll('\\', '/');
+      final fileName = normalizedPath.split('/').last;
+      request.files.add(
+        await http.MultipartFile.fromPath(
+          "image",
+          filePath,
+          filename: fileName,
+          contentType: _imageContentType(filePath),
+        ),
+      );
+
+      final streamed = await request.send();
+      final response = await http.Response.fromStream(streamed);
+
+      if (response.statusCode < 200 || response.statusCode >= 300) {
+        print("REMOVE BACKGROUND STATUS: ${response.statusCode}");
+        print("REMOVE BACKGROUND BODY: ${response.body}");
+        return null;
+      }
+
+      final contentType = response.headers["content-type"];
+      if ((contentType ?? "").toLowerCase().startsWith("image/")) {
+        final file = await _writeProcessedImage(
+          response.bodyBytes,
+          preferredExtension: _extensionForContentType(contentType),
+        );
+        return RemoveBackgroundResult(file: file);
+      }
+
+      final decoded = jsonDecode(response.body);
+      if (decoded is! Map<String, dynamic>) {
+        return null;
+      }
+
+      final responseData = decoded["data"];
+      final data = responseData is Map<String, dynamic>
+          ? responseData
+          : responseData is Map
+          ? responseData.map((key, value) => MapEntry(key.toString(), value))
+          : null;
+
+      final imageString = _extractImageString(decoded);
+      if (imageString == null) {
+        return null;
+      }
+
+      if (imageString.startsWith("http://") ||
+          imageString.startsWith("https://")) {
+        final remoteResponse = await http.get(Uri.parse(imageString));
+        if (remoteResponse.statusCode >= 200 &&
+            remoteResponse.statusCode < 300) {
+          final file = await _writeProcessedImage(
+            remoteResponse.bodyBytes,
+            preferredExtension: _extensionForContentType(
+              remoteResponse.headers["content-type"],
+            ),
+          );
+          return RemoveBackgroundResult(file: file, data: data);
+        }
+        return null;
+      }
+
+      final base64Payload = imageString.contains(",")
+          ? imageString.split(",").last.trim()
+          : imageString;
+
+      final file = await _writeProcessedImage(
+        base64Decode(base64Payload),
+        preferredExtension: _extensionForContentType(contentType),
+      );
+      return RemoveBackgroundResult(file: file, data: data);
+    } catch (e) {
+      print("REMOVE BACKGROUND ERROR: $e");
+    }
+
+    return null;
+  }
+
+  static Future<Map<String, dynamic>?> detectItem(
+    String token,
+    File imageFile,
+  ) async {
+    final url = ApiConfig.uri("detect-item");
+
+    try {
+      final request = http.MultipartRequest("POST", url);
+      request.headers.addAll({
+        "Accept": "application/json",
+        "Authorization": "Bearer $token",
+      });
+
+      final filePath = imageFile.path;
+      final normalizedPath = filePath.replaceAll('\\', '/');
+      final fileName = normalizedPath.split('/').last;
+      request.files.add(
+        await http.MultipartFile.fromPath(
+          "image",
+          filePath,
+          filename: fileName,
+          contentType: _imageContentType(filePath),
+        ),
+      );
+
+      final streamed = await request.send();
+      final response = await http.Response.fromStream(streamed);
+
+      if (response.statusCode < 200 || response.statusCode >= 300) {
+        print("DETECT ITEM STATUS: ${response.statusCode}");
+        print("DETECT ITEM BODY: ${response.body}");
+        return null;
+      }
+
+      final decoded = jsonDecode(response.body);
+      if (decoded is Map<String, dynamic>) {
+        return decoded;
+      }
+    } catch (e) {
+      print("DETECT ITEM ERROR: $e");
+    }
+
+    return null;
+  }
+
   // ================= INNER CIRCLE =================
 
   static Future<dynamic> getInnerCirclePosts(
     String token,
     String userId,
   ) async {
-    final url = ApiConfig.uri(
-      "inner-circle/posts",
-      query: {"user_id": userId},
-    );
+    final url = ApiConfig.uri("inner-circle/posts", query: {"user_id": userId});
 
     try {
       final res = await http.get(
@@ -685,10 +1024,7 @@ class ApiService {
           "Authorization": "Bearer $token",
           "Accept": "application/json",
         },
-        body: {
-          "user_id": userId,
-          "email": email,
-        },
+        body: {"user_id": userId, "email": email},
       );
 
       if (res.statusCode == 200 || res.statusCode == 201) {
@@ -714,9 +1050,7 @@ class ApiService {
           "Authorization": "Bearer $token",
           "Accept": "application/json",
         },
-        body: {
-          "code": code,
-        },
+        body: {"code": code},
       );
 
       if (res.statusCode == 200 || res.statusCode == 201) {
@@ -818,9 +1152,7 @@ class ApiService {
           "Authorization": "Bearer $token",
           "Accept": "application/json",
         },
-        body: {
-          "comment": comment,
-        },
+        body: {"comment": comment},
       );
 
       if (res.statusCode == 200 || res.statusCode == 201) {

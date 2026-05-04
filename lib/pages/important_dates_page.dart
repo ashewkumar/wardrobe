@@ -1,8 +1,12 @@
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import '../services/analytics_service.dart';
 import '../services/api_service.dart';
+import '../services/app_time_service.dart';
 import '../services/calendar_service.dart';
+import '../services/notification_service.dart';
+import '../services/stability_service.dart';
 import '../ui/app_theme.dart';
 import '../ui/modern_ui.dart';
 
@@ -25,6 +29,7 @@ class _ImportantDatesPageState extends State<ImportantDatesPage> {
   @override
   void initState() {
     super.initState();
+    AppAnalyticsService.instance.trackScreen('important_dates_page');
     _loadAuthAndFetch();
   }
 
@@ -53,10 +58,11 @@ class _ImportantDatesPageState extends State<ImportantDatesPage> {
       loading = true;
     });
 
-    final list = await CalendarService().getImportantDates(
-      token: token!,
-      userId: userId!,
+    final list = await AppStabilityService.instance.monitor(
+      'important_dates_fetch',
+      () => CalendarService().getImportantDates(token: token!, userId: userId!),
     );
+    await AppNotificationService.instance.syncImportantDateReminders(list);
 
     setState(() {
       dates = list;
@@ -69,6 +75,10 @@ class _ImportantDatesPageState extends State<ImportantDatesPage> {
 
     final res = await ApiService.deleteImportantDate(token!, item.id);
     if (res != null && res["status"] == true) {
+      await AppAnalyticsService.instance.track(
+        'important_date_deleted',
+        properties: <String, dynamic>{'id': item.id},
+      );
       await _fetchDates();
     }
   }
@@ -96,9 +106,7 @@ class _ImportantDatesPageState extends State<ImportantDatesPage> {
                     children: [
                       TextFormField(
                         controller: titleController,
-                        decoration: const InputDecoration(
-                          labelText: "Title",
-                        ),
+                        decoration: const InputDecoration(labelText: "Title"),
                         validator: (v) {
                           if (v == null || v.trim().isEmpty) {
                             return "Enter title";
@@ -109,7 +117,7 @@ class _ImportantDatesPageState extends State<ImportantDatesPage> {
                       const SizedBox(height: 12),
                       InkWell(
                         onTap: () async {
-                          final now = DateTime.now();
+                          final now = AppTime.now();
                           final picked = await showDatePicker(
                             context: context,
                             initialDate: selectedDate ?? now,
@@ -133,8 +141,8 @@ class _ImportantDatesPageState extends State<ImportantDatesPage> {
                               selectedDate == null
                                   ? "Pick a date"
                                   : "${selectedDate!.year.toString().padLeft(4, "0")}-"
-                                    "${selectedDate!.month.toString().padLeft(2, "0")}-"
-                                    "${selectedDate!.day.toString().padLeft(2, "0")}",
+                                        "${selectedDate!.month.toString().padLeft(2, "0")}-"
+                                        "${selectedDate!.day.toString().padLeft(2, "0")}",
                             ),
                           ),
                         ),
@@ -150,9 +158,7 @@ class _ImportantDatesPageState extends State<ImportantDatesPage> {
                       TextFormField(
                         controller: notesController,
                         maxLines: 3,
-                        decoration: const InputDecoration(
-                          labelText: "Notes",
-                        ),
+                        decoration: const InputDecoration(labelText: "Notes"),
                       ),
                     ],
                   ),
@@ -193,6 +199,12 @@ class _ImportantDatesPageState extends State<ImportantDatesPage> {
                 );
 
                 if (res != null && res["status"] == true) {
+                  await AppAnalyticsService.instance.track(
+                    'important_date_created',
+                    properties: <String, dynamic>{
+                      'title': titleController.text.trim(),
+                    },
+                  );
                   if (!mounted) return;
                   Navigator.pop(context);
                   await _fetchDates();
@@ -202,10 +214,7 @@ class _ImportantDatesPageState extends State<ImportantDatesPage> {
                       ? res["message"].toString()
                       : "Failed to save date";
                   ScaffoldMessenger.of(context).showSnackBar(
-                    SnackBar(
-                      content: Text(msg),
-                      backgroundColor: Colors.red,
-                    ),
+                    SnackBar(content: Text(msg), backgroundColor: Colors.red),
                   );
                 }
               },
@@ -240,9 +249,7 @@ class _ImportantDatesPageState extends State<ImportantDatesPage> {
                     children: [
                       TextFormField(
                         controller: titleController,
-                        decoration: const InputDecoration(
-                          labelText: "Title",
-                        ),
+                        decoration: const InputDecoration(labelText: "Title"),
                         validator: (v) {
                           if (v == null || v.trim().isEmpty) {
                             return "Enter title";
@@ -253,7 +260,7 @@ class _ImportantDatesPageState extends State<ImportantDatesPage> {
                       const SizedBox(height: 12),
                       InkWell(
                         onTap: () async {
-                          final now = DateTime.now();
+                          final now = AppTime.now();
                           final picked = await showDatePicker(
                             context: context,
                             initialDate: selectedDate,
@@ -292,9 +299,7 @@ class _ImportantDatesPageState extends State<ImportantDatesPage> {
                       TextFormField(
                         controller: notesController,
                         maxLines: 3,
-                        decoration: const InputDecoration(
-                          labelText: "Notes",
-                        ),
+                        decoration: const InputDecoration(labelText: "Notes"),
                       ),
                     ],
                   ),
@@ -328,6 +333,10 @@ class _ImportantDatesPageState extends State<ImportantDatesPage> {
                 );
 
                 if (res != null && res["status"] == true) {
+                  await AppAnalyticsService.instance.track(
+                    'important_date_updated',
+                    properties: <String, dynamic>{'id': item.id},
+                  );
                   if (!mounted) return;
                   Navigator.pop(context);
                   await _fetchDates();
@@ -337,10 +346,7 @@ class _ImportantDatesPageState extends State<ImportantDatesPage> {
                       ? res["message"].toString()
                       : "Failed to update date";
                   ScaffoldMessenger.of(context).showSnackBar(
-                    SnackBar(
-                      content: Text(msg),
-                      backgroundColor: Colors.red,
-                    ),
+                    SnackBar(content: Text(msg), backgroundColor: Colors.red),
                   );
                 }
               },
@@ -368,10 +374,7 @@ class _ImportantDatesPageState extends State<ImportantDatesPage> {
           }).toList();
 
     return Scaffold(
-      appBar: ModernUI.appBar(
-        context: context,
-        title: "Important Dates",
-      ),
+      appBar: ModernUI.appBar(context: context, title: "Important Dates"),
       body: ModernUI.pageWrapper(
         child: Padding(
           padding: const EdgeInsets.all(20),
@@ -397,182 +400,174 @@ class _ImportantDatesPageState extends State<ImportantDatesPage> {
                 child: loading
                     ? const Center(child: CircularProgressIndicator())
                     : filtered.isEmpty
-                        ? Center(
-                            child: Text(
-                              dates.isEmpty
-                                  ? "No important dates yet"
-                                  : "No matching dates",
-                              style: const TextStyle(color: Colors.black54),
-                            ),
-                          )
-                        : ListView.separated(
-                            itemCount: filtered.length,
-                            separatorBuilder: (_, __) =>
-                                const SizedBox(height: 12),
-                            itemBuilder: (context, i) {
-                              final item = filtered[i];
-                              final now = DateTime.now();
-                              final isToday = item.date.year == now.year &&
-                                  item.date.month == now.month &&
-                                  item.date.day == now.day;
+                    ? Center(
+                        child: Text(
+                          dates.isEmpty
+                              ? "No important dates yet"
+                              : "No matching dates",
+                          style: const TextStyle(color: Colors.black54),
+                        ),
+                      )
+                    : ListView.separated(
+                        itemCount: filtered.length,
+                        separatorBuilder: (_, __) => const SizedBox(height: 12),
+                        itemBuilder: (context, i) {
+                          final item = filtered[i];
+                          final now = AppTime.now();
+                          final isToday =
+                              item.date.year == now.year &&
+                              item.date.month == now.month &&
+                              item.date.day == now.day;
 
-                              return Container(
-                                padding: const EdgeInsets.all(14),
-                                decoration: BoxDecoration(
-                                  color: isToday
-                                      ? const Color(0xFFEFF7FF)
-                                      : AppTheme.softBg,
-                                  borderRadius: BorderRadius.circular(14),
-                                  border: Border.all(
-                                    color: isToday
-                                        ? AppTheme.navy
-                                        : AppTheme.softBorder,
+                          return Container(
+                            padding: const EdgeInsets.all(14),
+                            decoration: BoxDecoration(
+                              color: isToday
+                                  ? const Color(0xFFEFF7FF)
+                                  : AppTheme.softBg,
+                              borderRadius: BorderRadius.circular(14),
+                              border: Border.all(
+                                color: isToday
+                                    ? AppTheme.navy
+                                    : AppTheme.softBorder,
+                              ),
+                              boxShadow: AppTheme.softShadows,
+                            ),
+                            child: Row(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Container(
+                                  padding: const EdgeInsets.all(10),
+                                  decoration: BoxDecoration(
+                                    color: AppTheme.navy.withOpacity(0.12),
+                                    borderRadius: BorderRadius.circular(10),
                                   ),
-                                  boxShadow: AppTheme.softShadows,
+                                  child: const Icon(
+                                    Icons.event,
+                                    color: AppTheme.navy,
+                                  ),
                                 ),
-                                child: Row(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  children: [
-                                    Container(
-                                      padding: const EdgeInsets.all(10),
-                                      decoration: BoxDecoration(
-                                        color: AppTheme.navy.withOpacity(0.12),
-                                        borderRadius: BorderRadius.circular(10),
-                                      ),
-                                      child: const Icon(
-                                        Icons.event,
-                                        color: AppTheme.navy,
-                                      ),
-                                    ),
-                                    const SizedBox(width: 12),
-                                    Expanded(
-                                      child: Column(
-                                        crossAxisAlignment:
-                                            CrossAxisAlignment.start,
+                                const SizedBox(width: 12),
+                                Expanded(
+                                  child: Column(
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.start,
+                                    children: [
+                                      Row(
                                         children: [
-                                          Row(
-                                            children: [
-                                              Expanded(
-                                                child: Text(
-                                                  item.title,
-                                                  style: const TextStyle(
-                                                    fontSize: 16,
-                                                    fontWeight: FontWeight.w600,
-                                                  ),
-                                                ),
+                                          Expanded(
+                                            child: Text(
+                                              item.title,
+                                              style: const TextStyle(
+                                                fontSize: 16,
+                                                fontWeight: FontWeight.w600,
                                               ),
-                                              if (isToday)
-                                                Container(
-                                                  padding:
-                                                      const EdgeInsets.symmetric(
+                                            ),
+                                          ),
+                                          if (isToday)
+                                            Container(
+                                              padding:
+                                                  const EdgeInsets.symmetric(
                                                     horizontal: 8,
                                                     vertical: 4,
                                                   ),
-                                                  decoration: BoxDecoration(
-                                                    color: AppTheme.navy,
-                                                    borderRadius:
-                                                        BorderRadius.circular(
-                                                      10,
-                                                    ),
-                                                  ),
-                                                  child: const Text(
-                                                    "Today",
-                                                    style: TextStyle(
-                                                      color: Colors.white,
-                                                      fontSize: 11,
-                                                      fontWeight:
-                                                          FontWeight.w600,
-                                                    ),
-                                                  ),
-                                                ),
-                                            ],
-                                          ),
-                                          const SizedBox(height: 4),
-                                          Text(
-                                            item.dateLabel,
-                                            style: const TextStyle(
-                                              color: Colors.black54,
-                                            ),
-                                          ),
-                                          if (item.occasion.isNotEmpty)
-                                            const SizedBox(height: 6),
-                                          if (item.occasion.isNotEmpty)
-                                            Text(
-                                              "Occasion: ${item.occasion}",
-                                              style: const TextStyle(
-                                                color: Colors.black54,
+                                              decoration: BoxDecoration(
+                                                color: AppTheme.navy,
+                                                borderRadius:
+                                                    BorderRadius.circular(10),
                                               ),
-                                            ),
-                                          if (item.notes.isNotEmpty)
-                                            const SizedBox(height: 6),
-                                          if (item.notes.isNotEmpty)
-                                            Text(
-                                              item.notes,
-                                              style: const TextStyle(
-                                                color: Colors.black54,
+                                              child: const Text(
+                                                "Today",
+                                                style: TextStyle(
+                                                  color: Colors.white,
+                                                  fontSize: 11,
+                                                  fontWeight: FontWeight.w600,
+                                                ),
                                               ),
                                             ),
                                         ],
                                       ),
-                                    ),
-                                    IconButton(
-                                      icon: const Icon(
-                                        Icons.edit_outlined,
-                                        color: AppTheme.navy,
+                                      const SizedBox(height: 4),
+                                      Text(
+                                        item.dateLabel,
+                                        style: const TextStyle(
+                                          color: Colors.black54,
+                                        ),
                                       ),
-                                      onPressed: () => _showEditDialog(item),
-                                    ),
-                                    IconButton(
-                                      icon: const Icon(
-                                        Icons.delete_outline,
-                                        color: Colors.red,
-                                      ),
-                                      onPressed: () async {
-                                        final ok = await showDialog<bool>(
-                                          context: context,
-                                          builder: (context) {
-                                            return AlertDialog(
-                                              title: const Text("Delete"),
-                                              content: const Text(
-                                                "Delete this date?",
-                                              ),
-                                              actions: [
-                                                TextButton(
-                                                  onPressed: () =>
-                                                      Navigator.pop(
-                                                    context,
-                                                    false,
-                                                  ),
-                                                  child: const Text("Cancel"),
-                                                ),
-                                                ElevatedButton(
-                                                  onPressed: () =>
-                                                      Navigator.pop(
-                                                    context,
-                                                    true,
-                                                  ),
-                                                  child: const Text("Delete"),
-                                                ),
-                                              ],
-                                            );
-                                          },
-                                        );
-                                        if (ok == true) {
-                                          await _deleteDate(item);
-                                        }
-                                      },
-                                    ),
-                                  ],
+                                      if (item.occasion.isNotEmpty)
+                                        const SizedBox(height: 6),
+                                      if (item.occasion.isNotEmpty)
+                                        Text(
+                                          "Occasion: ${item.occasion}",
+                                          style: const TextStyle(
+                                            color: Colors.black54,
+                                          ),
+                                        ),
+                                      if (item.notes.isNotEmpty)
+                                        const SizedBox(height: 6),
+                                      if (item.notes.isNotEmpty)
+                                        Text(
+                                          item.notes,
+                                          style: const TextStyle(
+                                            color: Colors.black54,
+                                          ),
+                                        ),
+                                    ],
+                                  ),
                                 ),
-                              );
-                            },
-                          ),
+                                IconButton(
+                                  icon: const Icon(
+                                    Icons.edit_outlined,
+                                    color: AppTheme.navy,
+                                  ),
+                                  onPressed: () => _showEditDialog(item),
+                                ),
+                                IconButton(
+                                  icon: const Icon(
+                                    Icons.delete_outline,
+                                    color: Colors.red,
+                                  ),
+                                  onPressed: () async {
+                                    final ok = await showDialog<bool>(
+                                      context: context,
+                                      builder: (context) {
+                                        return AlertDialog(
+                                          title: const Text("Delete"),
+                                          content: const Text(
+                                            "Delete this date?",
+                                          ),
+                                          actions: [
+                                            TextButton(
+                                              onPressed: () =>
+                                                  Navigator.pop(context, false),
+                                              child: const Text("Cancel"),
+                                            ),
+                                            ElevatedButton(
+                                              onPressed: () =>
+                                                  Navigator.pop(context, true),
+                                              child: const Text("Delete"),
+                                            ),
+                                          ],
+                                        );
+                                      },
+                                    );
+                                    if (ok == true) {
+                                      await _deleteDate(item);
+                                    }
+                                  },
+                                ),
+                              ],
+                            ),
+                          );
+                        },
+                      ),
               ),
             ],
           ),
         ),
       ),
       floatingActionButton: FloatingActionButton(
+        heroTag: "important_dates_add_fab",
         onPressed: _showAddDialog,
         backgroundColor: AppTheme.navy,
         child: const Icon(Icons.add, color: Colors.white),

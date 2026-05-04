@@ -2,6 +2,7 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import '../services/api_config.dart';
 import '../services/api_service.dart';
 import '../ui/app_theme.dart';
 import '../ui/modern_ui.dart';
@@ -254,16 +255,6 @@ class _GalleryPageState extends State<GalleryPage> {
       },
     );
   }
-    } catch (e) {
-      print("ERROR: $e");
-
-      setState(() {
-        loading = false;
-      });
-
-      _showError("Connection failed");
-    }
-  }
 
   @override
   Widget build(BuildContext context) {
@@ -292,9 +283,9 @@ class _GalleryPageState extends State<GalleryPage> {
                         final img = images[index];
 
                         return ImageCard(
-                          name: img['image_name'],
-                          desc: img['description'],
-                          url: img['image_url'],
+                          name: (img['image_name'] ?? 'Image').toString(),
+                          desc: img['description']?.toString(),
+                          url: ApiConfig.imageUrl(img['image_url']),
                           onEdit: () => _showEditDialog(img),
                           onDelete: () async {
                             final ok = await showDialog<bool>(
@@ -334,7 +325,7 @@ class _GalleryPageState extends State<GalleryPage> {
 class ImageCard extends StatelessWidget {
   final String name;
   final String? desc;
-  final String url;
+  final String? url;
   final VoidCallback? onEdit;
   final VoidCallback? onDelete;
 
@@ -366,30 +357,37 @@ class ImageCard extends StatelessWidget {
                 borderRadius: const BorderRadius.vertical(
                   top: Radius.circular(15),
                 ),
-                child: Image.network(
-                  url,
-                  height: 140,
-                  width: double.infinity,
-                  fit: BoxFit.cover,
-                  loadingBuilder: (context, child, progress) {
-                    if (progress == null) return child;
+                child: url == null
+                    ? const SizedBox(
+                        height: 140,
+                        child: Center(
+                          child: Icon(Icons.image_not_supported, size: 40),
+                        ),
+                      )
+                    : Image.network(
+                        url!,
+                        height: 140,
+                        width: double.infinity,
+                        fit: BoxFit.cover,
+                        loadingBuilder: (context, child, progress) {
+                          if (progress == null) return child;
 
-                    return const SizedBox(
-                      height: 140,
-                      child: Center(
-                        child: CircularProgressIndicator(strokeWidth: 2),
+                          return const SizedBox(
+                            height: 140,
+                            child: Center(
+                              child: CircularProgressIndicator(strokeWidth: 2),
+                            ),
+                          );
+                        },
+                        errorBuilder: (c, e, s) {
+                          return const SizedBox(
+                            height: 140,
+                            child: Center(
+                              child: Icon(Icons.broken_image, size: 40),
+                            ),
+                          );
+                        },
                       ),
-                    );
-                  },
-                  errorBuilder: (c, e, s) {
-                    return const SizedBox(
-                      height: 140,
-                      child: Center(
-                        child: Icon(Icons.broken_image, size: 40),
-                      ),
-                    );
-                  },
-                ),
               ),
               Positioned(
                 right: 6,

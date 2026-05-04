@@ -2,7 +2,11 @@ import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../services/api_service.dart';
+import '../services/analytics_service.dart';
+import '../services/app_time_service.dart';
 import '../services/calendar_service.dart';
+import '../services/notification_service.dart';
+import '../services/stability_service.dart';
 import '../ui/app_theme.dart';
 
 class CalendarPage extends StatefulWidget {
@@ -22,6 +26,7 @@ class _CalendarPageState extends State<CalendarPage> {
   @override
   void initState() {
     super.initState();
+    AppAnalyticsService.instance.trackScreen('calendar_page');
     _loadAuthAndFetch();
   }
 
@@ -41,23 +46,25 @@ class _CalendarPageState extends State<CalendarPage> {
     if (token == null || userId == null) return;
     setState(() => loading = true);
 
-    final dates = await CalendarService().getImportantDates(
-      token: token!,
-      userId: userId!,
+    final dates = await AppStabilityService.instance.monitor(
+      'calendar_fetch_plans',
+      () => CalendarService().getImportantDates(token: token!, userId: userId!),
     );
+    await AppNotificationService.instance.syncImportantDateReminders(dates);
 
-    final mapped = dates
-        .map(
-          (d) => _PlanItem(
-            id: d.id,
-            title: d.title,
-            date: d.date,
-            occasion: d.occasion,
-            notes: d.notes,
-          ),
-        )
-        .toList()
-      ..sort((a, b) => a.date.compareTo(b.date));
+    final mapped =
+        dates
+            .map(
+              (d) => _PlanItem(
+                id: d.id,
+                title: d.title,
+                date: d.date,
+                occasion: d.occasion,
+                notes: d.notes,
+              ),
+            )
+            .toList()
+          ..sort((a, b) => a.date.compareTo(b.date));
 
     setState(() {
       _plans
@@ -69,12 +76,13 @@ class _CalendarPageState extends State<CalendarPage> {
 
   Future<void> _openPlanDialog({int? editIndex}) async {
     final isEditing = editIndex != null;
-    final existing = isEditing ? _plans[editIndex!] : null;
+    final existing = isEditing ? _plans[editIndex] : null;
     final titleController = TextEditingController(text: existing?.title ?? "");
-    final occasionController =
-        TextEditingController(text: existing?.occasion ?? "");
+    final occasionController = TextEditingController(
+      text: existing?.occasion ?? "",
+    );
     final notesController = TextEditingController(text: existing?.notes ?? "");
-    DateTime selectedDate = existing?.date ?? DateTime.now();
+    DateTime selectedDate = existing?.date ?? AppTime.now();
 
     final formKey = GlobalKey<FormState>();
     bool saving = false;
@@ -105,7 +113,7 @@ class _CalendarPageState extends State<CalendarPage> {
                       const SizedBox(height: 12),
                       InkWell(
                         onTap: () async {
-                          final now = DateTime.now();
+                          final now = AppTime.now();
                           final picked = await showDatePicker(
                             context: context,
                             initialDate: selectedDate,
@@ -138,9 +146,7 @@ class _CalendarPageState extends State<CalendarPage> {
                       TextField(
                         controller: notesController,
                         maxLines: 3,
-                        decoration: const InputDecoration(
-                          labelText: "Notes",
-                        ),
+                        decoration: const InputDecoration(labelText: "Notes"),
                       ),
                     ],
                   ),
@@ -159,8 +165,9 @@ class _CalendarPageState extends State<CalendarPage> {
                             if (!mounted) return;
                             ScaffoldMessenger.of(context).showSnackBar(
                               const SnackBar(
-                                content:
-                                    Text("Session expired. Please login again."),
+                                content: Text(
+                                  "Session expired. Please login again.",
+                                ),
                                 backgroundColor: Colors.red,
                               ),
                             );
@@ -193,6 +200,14 @@ class _CalendarPageState extends State<CalendarPage> {
                           setDialogState(() => saving = false);
 
                           if (res != null && res["status"] == true) {
+                            await AppAnalyticsService.instance.track(
+                              isEditing
+                                  ? 'calendar_plan_updated'
+                                  : 'calendar_plan_created',
+                              properties: <String, dynamic>{
+                                'title': titleController.text.trim(),
+                              },
+                            );
                             if (!mounted) return;
                             Navigator.of(context).pop();
                             await _fetchPlans();
@@ -251,6 +266,10 @@ class _CalendarPageState extends State<CalendarPage> {
 
     final res = await ApiService.deleteImportantDate(token!, plan.id);
     if (res != null && res["status"] == true) {
+      await AppAnalyticsService.instance.track(
+        'calendar_plan_deleted',
+        properties: <String, dynamic>{'id': plan.id},
+      );
       await _fetchPlans();
     }
   }
@@ -280,7 +299,10 @@ class _CalendarPageState extends State<CalendarPage> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text("April 2026", style: Theme.of(context).textTheme.titleLarge),
+                Text(
+                  "April 2026",
+                  style: Theme.of(context).textTheme.titleLarge,
+                ),
                 const SizedBox(height: 12),
                 Wrap(
                   spacing: 8,

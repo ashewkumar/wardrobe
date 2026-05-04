@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../services/api_service.dart';
+import '../services/app_time_service.dart';
 import '../ui/app_theme.dart';
 
 class TravelPage extends StatefulWidget {
@@ -58,13 +59,15 @@ class _TravelPageState extends State<TravelPage> {
 
   Future<void> _showPlanDialog({TravelPlan? existing}) async {
     final isEditing = existing != null;
-    final destinationController =
-        TextEditingController(text: existing?.destination ?? "");
-    final weatherController =
-        TextEditingController(text: existing?.weather ?? "");
+    final destinationController = TextEditingController(
+      text: existing?.destination ?? "",
+    );
+    final weatherController = TextEditingController(
+      text: existing?.weather ?? "",
+    );
     final notesController = TextEditingController(text: existing?.notes ?? "");
-    DateTime startDate = existing?.startDate ?? DateTime.now();
-    DateTime endDate = existing?.endDate ?? DateTime.now();
+    DateTime startDate = existing?.startDate ?? AppTime.now();
+    DateTime endDate = existing?.endDate ?? AppTime.now();
     bool saving = false;
 
     final formKey = GlobalKey<FormState>();
@@ -84,7 +87,9 @@ class _TravelPageState extends State<TravelPage> {
                     children: [
                       TextFormField(
                         controller: destinationController,
-                        decoration: const InputDecoration(labelText: "Destination"),
+                        decoration: const InputDecoration(
+                          labelText: "Destination",
+                        ),
                         validator: (v) {
                           if (v == null || v.trim().isEmpty) {
                             return "Enter destination";
@@ -95,11 +100,12 @@ class _TravelPageState extends State<TravelPage> {
                       const SizedBox(height: 12),
                       InkWell(
                         onTap: () async {
+                          final now = AppTime.now();
                           final picked = await showDatePicker(
                             context: context,
                             initialDate: startDate,
-                            firstDate: DateTime(DateTime.now().year - 1),
-                            lastDate: DateTime(DateTime.now().year + 5),
+                            firstDate: DateTime(now.year - 1),
+                            lastDate: DateTime(now.year + 5),
                           );
                           if (picked != null) {
                             setDialogState(() => startDate = picked);
@@ -122,11 +128,12 @@ class _TravelPageState extends State<TravelPage> {
                       const SizedBox(height: 12),
                       InkWell(
                         onTap: () async {
+                          final now = AppTime.now();
                           final picked = await showDatePicker(
                             context: context,
                             initialDate: endDate,
                             firstDate: startDate,
-                            lastDate: DateTime(DateTime.now().year + 5),
+                            lastDate: DateTime(now.year + 5),
                           );
                           if (picked != null) {
                             setDialogState(() => endDate = picked);
@@ -177,9 +184,10 @@ class _TravelPageState extends State<TravelPage> {
                           final res = isEditing
                               ? await ApiService.updateTravelPlan(
                                   token!,
-                                  existing!.id,
+                                  existing.id,
                                   userId: userId,
-                                  destination: destinationController.text.trim(),
+                                  destination: destinationController.text
+                                      .trim(),
                                   startDate: startLabel,
                                   endDate: endLabel,
                                   weather: weatherController.text.trim(),
@@ -188,7 +196,8 @@ class _TravelPageState extends State<TravelPage> {
                               : await ApiService.createTravelPlan(
                                   token!,
                                   userId: userId!,
-                                  destination: destinationController.text.trim(),
+                                  destination: destinationController.text
+                                      .trim(),
                                   startDate: startLabel,
                                   endDate: endLabel,
                                   weather: weatherController.text.trim(),
@@ -236,7 +245,7 @@ class _TravelPageState extends State<TravelPage> {
       context: context,
       builder: (context) => AlertDialog(
         title: const Text("Delete trip?"),
-        content: Text("Delete trip to ${plan.destination}?") ,
+        content: Text("Delete trip to ${plan.destination}?"),
         actions: [
           TextButton(
             onPressed: () => Navigator.of(context).pop(false),
@@ -257,7 +266,10 @@ class _TravelPageState extends State<TravelPage> {
     }
   }
 
-  Future<void> _showItemDialog({required TravelPlan plan, TravelItem? existing}) async {
+  Future<void> _showItemDialog({
+    required TravelPlan plan,
+    TravelItem? existing,
+  }) async {
     final isEditing = existing != null;
     final labelController = TextEditingController(text: existing?.label ?? "");
     bool checked = existing?.isChecked ?? false;
@@ -278,7 +290,9 @@ class _TravelPageState extends State<TravelPage> {
                   children: [
                     TextFormField(
                       controller: labelController,
-                      decoration: const InputDecoration(labelText: "Checklist item"),
+                      decoration: const InputDecoration(
+                        labelText: "Checklist item",
+                      ),
                       validator: (v) {
                         if (v == null || v.trim().isEmpty) {
                           return "Enter item";
@@ -289,7 +303,8 @@ class _TravelPageState extends State<TravelPage> {
                     const SizedBox(height: 8),
                     SwitchListTile(
                       value: checked,
-                      onChanged: (value) => setDialogState(() => checked = value),
+                      onChanged: (value) =>
+                          setDialogState(() => checked = value),
                       title: const Text("Packed"),
                       contentPadding: EdgeInsets.zero,
                     ),
@@ -313,7 +328,7 @@ class _TravelPageState extends State<TravelPage> {
                           final res = isEditing
                               ? await ApiService.updateTravelItem(
                                   token!,
-                                  existing!.id,
+                                  existing.id,
                                   userId: userId,
                                   label: labelController.text.trim(),
                                   isChecked: checked,
@@ -431,12 +446,16 @@ class _TravelPageState extends State<TravelPage> {
                             Row(
                               children: [
                                 IconButton(
-                                  onPressed: () => _showPlanDialog(existing: plan),
+                                  onPressed: () =>
+                                      _showPlanDialog(existing: plan),
                                   icon: const Icon(Icons.edit, size: 20),
                                 ),
                                 IconButton(
                                   onPressed: () => _confirmDeletePlan(plan),
-                                  icon: const Icon(Icons.delete_outline, size: 20),
+                                  icon: const Icon(
+                                    Icons.delete_outline,
+                                    size: 20,
+                                  ),
                                 ),
                               ],
                             ),
@@ -453,7 +472,8 @@ class _TravelPageState extends State<TravelPage> {
                           children: [
                             Expanded(
                               child: OutlinedButton(
-                                onPressed: () => _showPlanDialog(existing: plan),
+                                onPressed: () =>
+                                    _showPlanDialog(existing: plan),
                                 child: const Text("Edit trip"),
                               ),
                             ),
@@ -491,7 +511,8 @@ class _TravelPageState extends State<TravelPage> {
                         label: item.label,
                         checked: item.isChecked,
                         onChanged: (v) => _toggleItem(item, v ?? false),
-                        onEdit: () => _showItemDialog(plan: plan, existing: item),
+                        onEdit: () =>
+                            _showItemDialog(plan: plan, existing: item),
                         onDelete: () => _deleteItem(item),
                       ),
                   const SizedBox(height: 24),
@@ -538,10 +559,13 @@ class TravelPlan {
     return TravelPlan(
       id: data['id'].toString(),
       destination: (data['destination'] ?? '').toString(),
-      startDate: DateTime.tryParse((data['start_date'] ?? '').toString()) ??
-          DateTime.now(),
-      endDate: DateTime.tryParse((data['end_date'] ?? '').toString()) ??
-          DateTime.now(),
+      startDate:
+          DateTime.tryParse((data['start_date'] ?? '').toString()) != null
+          ? AppTime.parseApiDate((data['start_date'] ?? '').toString())
+          : AppTime.now(),
+      endDate: DateTime.tryParse((data['end_date'] ?? '').toString()) != null
+          ? AppTime.parseApiDate((data['end_date'] ?? '').toString())
+          : AppTime.now(),
       weather: (data['weather'] ?? '').toString(),
       notes: (data['notes'] ?? '').toString(),
       items: items,
@@ -550,11 +574,7 @@ class TravelPlan {
 }
 
 class TravelItem {
-  TravelItem({
-    required this.id,
-    required this.label,
-    required this.isChecked,
-  });
+  TravelItem({required this.id, required this.label, required this.isChecked});
 
   final String id;
   final String label;
@@ -632,10 +652,7 @@ class _ChecklistItem extends StatelessWidget {
         children: [
           Checkbox(value: checked, onChanged: onChanged),
           Expanded(child: Text(label)),
-          IconButton(
-            onPressed: onEdit,
-            icon: const Icon(Icons.edit, size: 18),
-          ),
+          IconButton(onPressed: onEdit, icon: const Icon(Icons.edit, size: 18)),
           IconButton(
             onPressed: onDelete,
             icon: const Icon(Icons.delete_outline, size: 18),
